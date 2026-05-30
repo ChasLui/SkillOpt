@@ -17,7 +17,7 @@ from skillopt.model.common import (
     default_model_for_backend,
 )
 
-BASE_URL = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.chat/v1")
+BASE_URL = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/v1")
 API_KEY = os.environ.get("MINIMAX_API_KEY", "")
 TIMEOUT_SECONDS = float(os.environ.get("MINIMAX_TIMEOUT_SECONDS", "300") or 300)
 MAX_TOKENS = int(os.environ.get("MINIMAX_MAX_TOKENS", "8000") or 8000)

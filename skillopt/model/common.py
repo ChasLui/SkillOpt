@@ -25,7 +25,7 @@ _BACKEND_DEFAULT_MODELS = {
     "claude_chat": "claude-sonnet-4-6",
     "claude_code_exec": "claude-sonnet-4-6",
     "qwen_chat": "Qwen/Qwen3.5-4B",
-    "minimax_chat": "MiniMax/MiniMax-Text-01",
+    "minimax_chat": "MiniMax-M2.7",
 }
 
 _BACKEND_ALIASES = {
