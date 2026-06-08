@@ -142,6 +142,7 @@ def main(argv=None) -> int:
     ap.add_argument("--budget-tokens", type=int, default=0,
                     help="approx token budget; auto-plans nights x rollouts when set")
     ap.add_argument("--budget-minutes", type=float, default=0.0)
+    ap.add_argument("--preferences", default="", help="free-text user preferences (prior for reflect)")
     ap.add_argument("--limit-replay", type=int, default=0, help="cap #train tasks (cost control)")
     ap.add_argument("--limit-holdout", type=int, default=0, help="cap #val and #test tasks (cost control)")
     ap.add_argument("--json", action="store_true")
@@ -158,7 +159,7 @@ def main(argv=None) -> int:
         backend=args.backend, model=args.model,
         optimizer_backend=args.optimizer_backend, optimizer_model=args.optimizer_model,
         target_backend=args.target_backend, target_model=args.target_model,
-        codex_path=args.codex_path,
+        codex_path=args.codex_path, preferences=args.preferences,
     )
 
     results = []

@@ -27,12 +27,20 @@ def _required_tools(task: TaskRecord) -> List[str]:
 
 
 def replay_one(backend: Backend, task: TaskRecord, skill: str, memory: str) -> ReplayResult:
+    import time
     tools = _required_tools(task)
     tools_called: List[str] = []
+    t0 = time.time()
+    tok_before = backend.tokens_used()
     if tools:
         response, tools_called = backend.attempt_with_tools(task, skill, memory, tools)
     else:
         response = backend.attempt(task, skill, memory)
+    latency_ms = (time.time() - t0) * 1000.0
+    tokens = max(0, backend.tokens_used() - tok_before)
+    # if the backend doesn't track tokens (e.g. mock), approximate from text length
+    if tokens == 0:
+        tokens = (len(skill) + len(memory) + len(task.intent) + len(response)) // 4
 
     # rule judges may need the detected tool calls; score locally when possible
     if task.reference_kind == "rule" and task.judge:
@@ -50,6 +58,8 @@ def replay_one(backend: Backend, task: TaskRecord, skill: str, memory: str) -> R
         task_type=(task.tags[0] if task.tags else "task"),
         judge_rationale=rationale,
         tools_called=tools_called,
+        tokens=int(tokens),
+        latency_ms=round(latency_ms, 1),
     )
 
 
@@ -68,3 +78,41 @@ def aggregate_scores(pairs: List[Tuple[TaskRecord, ReplayResult]]) -> Tuple[floa
     hard = sum(r.hard for _t, r in pairs) / len(pairs)
     soft = sum(r.soft for _t, r in pairs) / len(pairs)
     return hard, soft
+
+
+def aggregate_cost(pairs: List[Tuple[TaskRecord, ReplayResult]]) -> Tuple[float, float]:
+    """Mean (tokens, latency_ms) per task — the cost objectives."""
+    if not pairs:
+        return 0.0, 0.0
+    tok = sum(r.tokens for _t, r in pairs) / len(pairs)
+    lat = sum(r.latency_ms for _t, r in pairs) / len(pairs)
+    return tok, lat
+
+
+def multi_objective_reward(
+    pairs: List[Tuple[TaskRecord, ReplayResult]],
+    *,
+    w_acc: float = 1.0,
+    w_tokens: float = 0.0,
+    w_latency: float = 0.0,
+    token_ref: float = 2000.0,
+    latency_ref_ms: float = 15000.0,
+) -> float:
+    """Weighted reward = accuracy↑, tokens↓, latency↓.
+
+    Cost terms are normalized against a reference and clamped to [0,1], so a
+    response at/under the reference cost contributes ~1.0 and an expensive one
+    less. Weights let the user trade off (default = accuracy only, backward
+    compatible).
+    """
+    if not pairs:
+        return 0.0
+    acc, _soft = aggregate_scores(pairs)
+    tok, lat = aggregate_cost(pairs)
+    tok_score = max(0.0, 1.0 - tok / max(1.0, token_ref)) if token_ref else 0.0
+    lat_score = max(0.0, 1.0 - lat / max(1.0, latency_ref_ms)) if latency_ref_ms else 0.0
+    total_w = w_acc + w_tokens + w_latency
+    if total_w <= 0:
+        return acc
+    return (w_acc * acc + w_tokens * tok_score + w_latency * lat_score) / total_w
+

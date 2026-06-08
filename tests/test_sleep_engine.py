@@ -232,6 +232,51 @@ class TestLlmMiner(unittest.TestCase):
         self.assertEqual(make_llm_miner(EmptyBackend())([digest]), [])
 
 
+class TestMultiObjectiveAndPrefs(unittest.TestCase):
+    def test_multi_objective_reward(self):
+        from skillopt.sleep.replay import multi_objective_reward
+        from skillopt.sleep.types import ReplayResult, TaskRecord
+        t = TaskRecord(id="t", project="/p", intent="x")
+        expensive = [(t, ReplayResult(id="t", hard=1.0, tokens=4000, latency_ms=20000))]
+        cheap = [(t, ReplayResult(id="t", hard=1.0, tokens=200, latency_ms=1000))]
+        self.assertEqual(
+            multi_objective_reward(expensive, w_acc=1, w_tokens=0, w_latency=0),
+            multi_objective_reward(cheap, w_acc=1, w_tokens=0, w_latency=0),
+        )
+        re = multi_objective_reward(expensive, w_acc=1, w_tokens=1, w_latency=1)
+        rc = multi_objective_reward(cheap, w_acc=1, w_tokens=1, w_latency=1)
+        self.assertGreater(rc, re)
+
+    def test_preferences_injected_into_reflect(self):
+        from skillopt.sleep.backend import CliBackend
+        from skillopt.sleep.types import TaskRecord, ReplayResult
+        captured = {}
+
+        class CapBackend(CliBackend):
+            name = "cap"
+            def _call(self, prompt, *, max_tokens=1024):
+                captured["prompt"] = prompt
+                return "[]"
+
+        be = CapBackend()
+        be.preferences = "Prefer concise British English."
+        t = TaskRecord(id="t", project="/p", intent="x", reference_kind="rule",
+                       judge={"checks": [{"op": "contains", "arg": "z"}]})
+        be.reflect([(t, ReplayResult(id="t", hard=0.0, fail_reason="failed: contains=z"))],
+                   [], "skill", "", edit_budget=2, evolve_skill=True, evolve_memory=False)
+        self.assertIn("British English", captured["prompt"])
+
+    def test_replay_records_cost(self):
+        from skillopt.sleep.backend import MockBackend
+        from skillopt.sleep.replay import replay_one
+        from skillopt.sleep.types import TaskRecord
+        t = TaskRecord(id="t", project="/p", intent="hello world",
+                       reference_kind="exact", reference="hi")
+        r = replay_one(MockBackend(), t, "some skill text", "")
+        self.assertGreater(r.tokens, 0)
+        self.assertGreaterEqual(r.latency_ms, 0.0)
+
+
 class TestMultiRolloutAndBudget(unittest.TestCase):
     def test_rolloutset_stats(self):
         from skillopt.sleep.rollout import RolloutSet

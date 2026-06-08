@@ -95,6 +95,8 @@ class ReplayResult:
     task_type: str = "task"
     judge_rationale: str = ""
     tools_called: List[str] = field(default_factory=list)
+    tokens: int = 0                   # approx tokens this rollout cost (for token objective)
+    latency_ms: float = 0.0           # wall-clock for this rollout (for latency objective)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

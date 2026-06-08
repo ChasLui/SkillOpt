@@ -38,6 +38,8 @@ def skill_hash(content: str) -> str:
 
 class Backend:
     name = "base"
+    # Optional user preferences (free text) injected into reflect as a prior.
+    preferences: str = ""
 
     def attempt(self, task: TaskRecord, skill: str, memory: str) -> str:
         raise NotImplementedError
@@ -381,6 +383,12 @@ class CliBackend(Backend):
                 "\n# Exact criteria the outputs are FAILING (fix these directly)\n"
                 + "\n".join(f"- {_explain(c)}  [{c}, failed {n}x]" for c, n in crit.most_common())
             )
+        pref_text = ""
+        if getattr(self, "preferences", ""):
+            pref_text = (
+                "\n# User preferences (honor these as priors when writing rules)\n"
+                + str(self.preferences).strip()
+            )
         prompt = (
             "You are SkillOpt's optimizer. The agent keeps failing the recurring "
             f"tasks below. Propose at most {edit_budget} bounded edits to the "
@@ -401,7 +409,8 @@ class CliBackend(Backend):
             'Return ONLY a JSON array: '
             '[{"op":"add|replace|delete","content":"<rule>","anchor":"<text to replace/delete, optional>","rationale":"<why>"}].\n\n'
             f"# Current {target}\n{cur_doc}\n"
-            f"{criteria_text}\n\n"
+            f"{criteria_text}\n"
+            f"{pref_text}\n\n"
             f"# Recurring failures\n{fail_text}"
         )
         # Call with one retry: transient non-JSON replies otherwise waste a whole
@@ -756,16 +765,23 @@ def build_backend(
     target_backend: str = "",
     target_model: str = "",
     codex_path: str = "",
+    preferences: str = "",
 ) -> Backend:
     """Build a single or dual backend.
 
     If optimizer_* or target_* are given, returns a DualBackend routing
     attempt->target and reflect/judge->optimizer. Otherwise a single backend
-    from (backend, model).
+    from (backend, model). ``preferences`` (free text) is attached so reflect
+    uses it as a prior (set on the optimizer for dual backends).
     """
     has_split = any([optimizer_backend, optimizer_model, target_backend, target_model])
     if not has_split:
-        return get_backend(backend, model=model, codex_path=codex_path)
+        be = get_backend(backend, model=model, codex_path=codex_path)
+        be.preferences = preferences
+        return be
     tgt = get_backend(target_backend or backend, model=target_model or model, codex_path=codex_path)
     opt = get_backend(optimizer_backend or backend, model=optimizer_model or model, codex_path=codex_path)
-    return DualBackend(target=tgt, optimizer=opt)
+    opt.preferences = preferences  # reflect runs on the optimizer
+    dual = DualBackend(target=tgt, optimizer=opt)
+    dual.preferences = preferences
+    return dual
