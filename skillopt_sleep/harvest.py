@@ -148,8 +148,11 @@ def _is_headless_replay(digest: "SessionDigest") -> bool:
     for marker in _REPLAY_PROMPT_MARKERS:
         if marker in prompt:
             return True
-    # Sub-3-second single-turn sessions are almost certainly programmatic.
-    if digest.started_at and digest.ended_at:
+    # Sub-3-second single-turn sessions with short prompts are almost
+    # certainly programmatic (engine grader/judge calls).  We require the
+    # prompt to also be short (<200 chars) to avoid false-positives on
+    # real one-shot questions that Claude happens to answer quickly.
+    if digest.started_at and digest.ended_at and len(prompt) < 200:
         try:
             fmt = "%Y-%m-%dT%H:%M:%S"
             start = datetime.strptime(digest.started_at[:19], fmt)

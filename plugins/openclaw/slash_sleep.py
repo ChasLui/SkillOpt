@@ -208,7 +208,12 @@ def reject(night: str = None) -> int:
 
 
 def schedule_cmd(hour: int, minute: int) -> int:
-    """Install a nightly cron entry via the shared SkillOpt-Sleep scheduler."""
+    """Install a nightly cron entry via the shared SkillOpt-Sleep scheduler.
+
+    Note: this schedules the shared engine (``python -m skillopt_sleep run``),
+    not the OpenClaw-specific ``run_sleep.py``.  Use ``run_sleep_cron.sh`` if
+    you need the OpenClaw-native backend and category task files instead.
+    """
     try:
         from skillopt_sleep.scheduler import schedule
     except ImportError:
