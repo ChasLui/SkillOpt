@@ -2,6 +2,59 @@
 
 SkillOpt supports multiple LLM backends. This guide shows how to add your own.
 
+## Built-in: the generic OpenAI-compatible backend
+
+Before writing a new backend, check whether your provider already speaks the
+OpenAI Chat Completions protocol. Most do — in which case you can use the
+built-in **`openai_compatible`** backend
+(`skillopt/model/openai_compatible_backend.py`) with no code changes.
+
+A single `base_url` + `api_key` pair lets you point SkillOpt at, for example:
+
+| Provider | `base_url` | Example model |
+|---|---|---|
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
+| Together AI | `https://api.together.xyz/v1` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| Ollama (local) | `http://localhost:11434/v1` | `qwen2.5:7b` |
+| vLLM / SGLang / TGI | `http://localhost:8000/v1` | your served model |
+| LiteLLM proxy | `http://localhost:4000` | any proxied model |
+| OpenRouter / Fireworks / xAI / … | provider base URL | provider model id |
+
+Select it as the optimizer and/or target backend:
+
+```python
+import skillopt.model as model
+
+# Shorthand: use it for both optimizer and target.
+model.set_backend("openai_compatible")
+
+# Point it at a provider (shared, or per-role with optimizer_*/target_*).
+model.configure_openai_compatible(
+    base_url="https://api.deepseek.com/v1",
+    api_key="sk-...",
+    model="deepseek-chat",
+)
+```
+
+Or configure it entirely through environment variables (role-specific
+`OPTIMIZER_*` / `TARGET_*` variants override the shared ones):
+
+```bash
+export TARGET_BACKEND=openai_compatible
+export OPENAI_COMPATIBLE_BASE_URL="https://api.groq.com/openai/v1"
+export OPENAI_COMPATIBLE_API_KEY="gsk_..."
+export OPENAI_COMPATIBLE_MODEL="llama-3.3-70b-versatile"
+# Optional: OPENAI_COMPATIBLE_TEMPERATURE, _MAX_TOKENS, _TIMEOUT_SECONDS
+```
+
+The backend uses the official `openai` SDK, records token usage through the
+shared tracker, supports tool/function calling via
+`chat_target_messages(..., tools=...)`, and exposes
+`count_tokens()` (tiktoken with a character-based fallback for non-OpenAI
+models). Only write a brand-new backend if your provider is *not*
+OpenAI-compatible.
+
 ## Backend Architecture
 
 ```

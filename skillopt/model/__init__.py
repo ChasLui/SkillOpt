@@ -112,13 +112,18 @@ def chat_optimizer(
             reasoning_effort=reasoning_effort,
             timeout=timeout,
         )
-<<<<<<< HEAD
     if get_optimizer_backend() == "minimax_chat":
         return _minimax.chat_optimizer(
-=======
+            system=system,
+            user=user,
+            max_completion_tokens=max_completion_tokens,
+            retries=retries,
+            stage=stage,
+            reasoning_effort=reasoning_effort,
+            timeout=timeout,
+        )
     if get_optimizer_backend() == "openai_compatible":
         return _openai_compat.chat_optimizer(
->>>>>>> 3a5fa59 (feat(model): route optimizer/target calls to the openai_compatible backend)
             system=system,
             user=user,
             max_completion_tokens=max_completion_tokens,
@@ -187,8 +192,8 @@ def chat_target(
         )
     if not is_target_chat_backend():
         raise NotImplementedError(
-            "chat_target is only supported with target_backend=openai_chat, claude_chat, qwen_chat, or minimax_chat. "
-            "Exec backends are handled in environment-specific rollout code."
+            "chat_target is only supported with target_backend=openai_chat, claude_chat, qwen_chat, minimax_chat, "
+            "or openai_compatible. Exec backends are handled in environment-specific rollout code."
         )
     return _openai.chat_target(
         system=system,
@@ -236,13 +241,20 @@ def chat_optimizer_messages(
             return_message=return_message,
             timeout=timeout,
         )
-<<<<<<< HEAD
     if get_optimizer_backend() == "minimax_chat":
         return _minimax.chat_target_messages(
-=======
+            messages=messages,
+            max_completion_tokens=max_completion_tokens,
+            retries=retries,
+            stage=stage,
+            reasoning_effort=reasoning_effort,
+            tools=tools,
+            tool_choice=tool_choice,
+            return_message=return_message,
+            timeout=timeout,
+        )
     if get_optimizer_backend() == "openai_compatible":
         return _openai_compat.chat_optimizer_messages(
->>>>>>> 3a5fa59 (feat(model): route optimizer/target calls to the openai_compatible backend)
             messages=messages,
             max_completion_tokens=max_completion_tokens,
             retries=retries,
@@ -326,8 +338,8 @@ def chat_target_messages(
         )
     if not is_target_chat_backend():
         raise NotImplementedError(
-            "chat_target_messages is only supported with target_backend=openai_chat, claude_chat, qwen_chat, or minimax_chat. "
-            "Exec backends are handled in environment-specific rollout code."
+            "chat_target_messages is only supported with target_backend=openai_chat, claude_chat, qwen_chat, "
+            "minimax_chat, or openai_compatible. Exec backends are handled in environment-specific rollout code."
         )
     return _openai.chat_target_messages(
         messages=messages,
