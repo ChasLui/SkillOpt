@@ -6,6 +6,15 @@ learning-rate annealing in neural-network training).
 
 This module has zero LLM dependencies — all behaviour is deterministic pure
 math — making it an ideal target for precise unit tests.
+
+Scheduler contract
+------------------
+Decay schedulers (Linear, Cosine) guarantee:
+- First ``step()`` returns ``max_lr``.
+- ``total_steps``-th ``step()`` returns ``min_lr``.
+- Intermediate values are monotonically non-increasing and clamped to
+  ``[min_lr, max_lr]``.
+- Beyond ``total_steps`` the value plateaus at ``min_lr``.
 """
 from __future__ import annotations
 
@@ -124,14 +133,15 @@ class TestLinearScheduler:
             assert s.step() == 2
 
     def test_known_decay_sequence(self) -> None:
-        """Linear decay max_lr=10, min_lr=2, total_steps=4 (t=0.25,0.50,0.75,1.0).
+        """Linear decay max_lr=10, min_lr=2, total_steps=4.
+           t = (step-1)/(total_steps-1) = 0, 1/3, 2/3, 1
            lr = 10 + (2-10)*t = 10 - 8t
-           t=0.25: lr=8.0, t=0.50: lr=6.0, t=0.75: lr=4.0, t=1.0: lr=2.0
+           t=0: lr=10, t=1/3: lr≈7.33→7, t=2/3: lr≈4.67→5, t=1: lr=2
         """
         s = LinearScheduler(max_lr=10, min_lr=2, total_steps=4)
-        assert s.step() == 8
-        assert s.step() == 6
-        assert s.step() == 4
+        assert s.step() == 10
+        assert s.step() == 7
+        assert s.step() == 5
         assert s.step() == 2
 
     def test_step_state_dict_resume_consistent(self) -> None:
@@ -207,12 +217,14 @@ class TestCosineScheduler:
             assert s.step() == 2
 
     def test_midpoint_close_to_mean(self) -> None:
-        """At the half-way point, cosine gives (max+min)/2 exactly."""
+        """At the half-way neighbourhood, cosine is close to (max+min)/2.
+           total_steps=100, step=50 → t=49/99≈0.495.
+           cos(0.495π)≈0, lr ≈ (20+2)/2 = 11.
+        """
         s = CosineScheduler(max_lr=20, min_lr=2, total_steps=100)
         for _ in range(49):
             s.step()
-        mid = s.step()  # step 50 / 100, t=0.5, cos(pi/2)=0
-        # lr = min + 0.5*(max-min)*(1+0) = (max+min)/2 = 11
+        mid = s.step()  # step 50
         assert mid == 11
 
     def test_step_state_dict_resume_consistent(self) -> None:
@@ -231,19 +243,19 @@ class TestCosineScheduler:
             assert s.step() == 5
 
     def test_early_steps_near_max(self) -> None:
-        """Cosine annealing stays flat near max_lr early on (cos(0)≈1)."""
+        """Cosine annealing stays near max_lr early on (cos(0)=1)."""
         s = CosineScheduler(max_lr=100, min_lr=0, total_steps=100)
-        # step 1: t=0.01, cos(0.01*pi)≈0.9995 → lr≈99.97 → 100
+        # step 1: t=0, cos(0)=1 → lr=100
         assert s.step() == 100
-        # step 2: t=0.02, cos≈0.9980 → lr≈99.9 → 100
+        # step 2: t=1/99≈0.01, cos≈0.9995 → lr≈99.97 → 100
         assert s.step() == 100
 
     def test_late_steps_near_min(self) -> None:
-        """Cosine annealing flattens near min_lr at the end (cos(pi)≈-1)."""
+        """Cosine annealing flattens near min_lr at the end (cos(π)=-1)."""
         s = CosineScheduler(max_lr=100, min_lr=0, total_steps=100)
         for _ in range(99):
             s.step()
-        # step 100: t=1.0, cos(pi)=-1 → lr=0
+        # step 100: t=1, cos(π)=-1 → lr=0
         assert s.step() == 0
 
 
