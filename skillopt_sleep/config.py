@@ -41,6 +41,7 @@ DEFAULTS: Dict[str, Any] = {
     "gate_mode": "on",            # "on" (validation-gated) | "off" (greedy, no hard filter)
     "codex_path": "",             # "" => auto-detect the real @openai/codex binary
     "edit_budget": 4,             # textual learning rate (max edits/night)
+    "preferences": "",            # free-text house rules injected into reflect as a prior
     "gate_metric": "mixed",       # hard | soft | mixed (mixed best for tiny holdouts)
     "gate_mixed_weight": 0.5,
     "replay_mode": "mock",        # "mock" (sandboxed prompt) | "fresh" (worktree)

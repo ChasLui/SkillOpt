@@ -120,6 +120,7 @@ def run_sleep_cycle(
         codex_path=cfg.get("codex_path", ""),
         project_dir=project,
     )
+    backend.preferences = cfg.get("preferences", "")
     _progress(cfg, f"night {night}: project={project} backend={backend.name}")
 
     # ── live skill/memory docs ───────────────────────────────────────────

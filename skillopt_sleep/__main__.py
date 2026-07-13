@@ -91,6 +91,8 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--progress", action="store_true",
                    help="print phase progress to stderr")
     p.add_argument("--auto-adopt", action="store_true")
+    p.add_argument("--preferences", default="",
+                   help="free-text house rules injected into the optimizer's reflect step")
     p.add_argument("--json", action="store_true")
 
 
@@ -118,6 +120,8 @@ def _cfg_from_args(args, task_meta: Dict[str, Any] | None = None) -> Any:
         overrides["lookback_hours"] = lh
     if getattr(args, "edit_budget", 0):
         overrides["edit_budget"] = args.edit_budget
+    if getattr(args, "preferences", ""):
+        overrides["preferences"] = args.preferences
     if getattr(args, "max_sessions", 0):
         overrides["max_sessions_per_night"] = args.max_sessions
     if getattr(args, "max_tasks", 0):

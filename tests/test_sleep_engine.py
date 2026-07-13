@@ -199,6 +199,7 @@ class TestHarvest(unittest.TestCase):
                 "max_sessions": 5,
                 "max_tasks": 3,
                 "target_skill_path": ".agents/skills/taste-skill/SKILL.md",
+                "preferences": "Always use async/await",
                 "progress": True,
                 "auto_adopt": False,
             })
@@ -206,6 +207,7 @@ class TestHarvest(unittest.TestCase):
             cfg = _cfg_from_args(Args())
 
             self.assertEqual(cfg.get("backend"), "codex")
+            self.assertEqual(cfg.get("preferences"), "Always use async/await")
             self.assertEqual(cfg.get("max_sessions_per_night"), 5)
             self.assertEqual(cfg.get("max_tasks_per_night"), 3)
             self.assertTrue(cfg.get("progress"))
