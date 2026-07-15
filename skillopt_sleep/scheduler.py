@@ -105,10 +105,22 @@ def _runner_cmd(project: str, backend: str, extra: str, python: str) -> str:
     logdir = os.path.join(project, ".skillopt-sleep")
     log = os.path.join(logdir, "cron.log")
     # use absolute python + -m so cron's/scheduler's minimal env still works
-    cmd = (f'{python} -m skillopt_sleep run --project "{project}" '
+    cmd = (f'"{python}" -m skillopt_sleep run --project "{project}" '
            f'--scope invoked --backend {backend} {extra}'.rstrip())
     if sys.platform == "win32":
-        return f'cmd.exe /c "if not exist \\"{logdir}\\" mkdir \\"{logdir}\\" && cd /d \\"{_repo_root()}\\" && {cmd} >> \\"{log}\\" 2>&1"'
+        helper_script = os.path.join(logdir, "run.cmd")
+        try:
+            os.makedirs(logdir, exist_ok=True)
+            content = (
+                "@echo off\n"
+                f'cd /d "{_repo_root()}"\n'
+                f'{cmd} >> "{log}" 2>&1\n'
+            )
+            with open(helper_script, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception:
+            pass
+        return f'"{helper_script}"'
     return f'mkdir -p "{logdir}"; cd "{_repo_root()}" && {cmd} >> "{log}" 2>&1'
 
 
@@ -181,6 +193,13 @@ def unschedule(project: Optional[str] = None, *, all_projects: bool = False) -> 
         elif project:
             tn = _win_task_name(project)
             ok = _delete_win_task(tn)
+            try:
+                logdir = os.path.join(project, ".skillopt-sleep")
+                helper = os.path.join(logdir, "run.cmd")
+                if os.path.exists(helper):
+                    os.remove(helper)
+            except Exception:
+                pass
             return ok, ("Removed." if ok else "Failed to remove scheduled task (does it exist?).")
         return False, "No project specified to unschedule."
 
