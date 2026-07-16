@@ -31,6 +31,7 @@ def _run(script, args, env, cwd):
     return proc.returncode, proc.stdout, proc.stderr
 
 
+@unittest.skipIf(sys.platform == "win32", "Unix bash runner tests require POSIX/bash environment")
 class TestRunnerSourceCheckout(unittest.TestCase):
     """When skillopt_sleep/ is found in the repo, the source-checkout path is used."""
 
@@ -46,6 +47,7 @@ class TestRunnerSourceCheckout(unittest.TestCase):
         self.assertIn("status", out)
 
 
+@unittest.skipIf(sys.platform == "win32", "Unix bash runner tests require POSIX/bash environment")
 class TestRunnerCliFallback(unittest.TestCase):
     """When no source dir is found, fall back to the skillopt-sleep CLI on PATH."""
 
@@ -101,6 +103,7 @@ class TestRunnerCliFallback(unittest.TestCase):
         self.assertIn("fake-cli invoked: status", out)
 
 
+@unittest.skipIf(sys.platform == "win32", "Unix bash runner tests require POSIX/bash environment")
 class TestRunnerNoEngine(unittest.TestCase):
     """When no source dir, no CLI on PATH, and no importable package, error cleanly."""
 

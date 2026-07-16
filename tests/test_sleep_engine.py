@@ -769,6 +769,60 @@ class TestCodexBackend(unittest.TestCase):
         self.assertIn("exited 1", be.last_call_error)  # failure surfaced for diagnostics
         self.assertEqual(called, [])                   # no tool actually ran
 
+    def test_codex_resolve_path_windows(self):
+        from skillopt_sleep.backend import resolve_codex_path
+        with mock.patch("sys.platform", "win32"), \
+             mock.patch("shutil.which", return_value=None), \
+             mock.patch.dict("os.environ", {
+                 "APPDATA": r"C:\Users\Sparsh\AppData\Roaming",
+                 "USERPROFILE": r"C:\Users\Sparsh",
+                 "NVM_HOME": r"C:\Users\Sparsh\nvm"
+             }), \
+             mock.patch("os.path.exists", return_value=True):
+            path = resolve_codex_path("")
+            self.assertEqual(path, r"C:\Users\Sparsh\AppData\Roaming\npm\codex.cmd")
+
+    def test_codex_attempt_with_tools_windows(self):
+        from skillopt_sleep.backend import CodexCliBackend
+        be = CodexCliBackend(codex_path="codex")
+        task = TaskRecord(id="t", project="/p", intent="answer the question",
+                          reference_kind="rule",
+                          judge={"checks": [{"op": "tool_called", "arg": "search"}]})
+        calls = []
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            class Proc:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+            return Proc()
+
+        with mock.patch("os.name", "nt"), \
+             mock.patch("shutil.rmtree"), \
+             mock.patch("skillopt_sleep.backend.subprocess.run", side_effect=fake_run):
+            orig_mkdtemp = tempfile.mkdtemp
+            temp_dirs = []
+            def fake_mkdtemp(*args, **kwargs):
+                d = orig_mkdtemp(*args, **kwargs)
+                temp_dirs.append(d)
+                return d
+            with mock.patch("tempfile.mkdtemp", side_effect=fake_mkdtemp):
+                be.attempt_with_tools(task, "", "", ["search"])
+            
+            self.assertEqual(len(temp_dirs), 1)
+            work_dir = temp_dirs[0]
+            shim_path = os.path.join(work_dir, "search.cmd")
+            try:
+                self.assertTrue(os.path.exists(shim_path))
+                with open(shim_path, "r") as f:
+                    content = f.read()
+                self.assertIn("@echo off", content)
+                self.assertIn("%~n0", content)
+            finally:
+                import shutil
+                shutil.rmtree(work_dir, ignore_errors=True)
+
+
 
 class TestMultiRolloutAndBudget(unittest.TestCase):
     def test_rolloutset_stats(self):
