@@ -1333,6 +1333,8 @@ class TestVerifierDiscipline(unittest.TestCase):
         """Gate must reject an edit that partially degrades held-out (1.0→0.5),
         not just all-or-nothing collapses. Train improves (0.0→1.0) which makes
         the regression easy to miss — the gate catches it anyway."""
+        from skillopt_sleep.replay import aggregate_scores, replay_batch
+
         be = MockFractionalDegradationBackend()
         train = TaskRecord(id="t3", project="/p", intent="train", reference="ABC",
                            reference_kind="exact", tags=["rule:__reward_hacking__"], split="train")
@@ -1341,6 +1343,11 @@ class TestVerifierDiscipline(unittest.TestCase):
         val2 = TaskRecord(id="v2", project="/p", intent="val", reference="GHI",
                           reference_kind="exact", tags=["rule:real"], split="val")
         tasks = [train, val1, val2]
+
+        candidate_pairs = replay_batch(be, [val1, val2], be.HACK_TEXT, "")
+        candidate_hard, _candidate_soft = aggregate_scores(candidate_pairs)
+        self.assertEqual([result.hard for _task, result in candidate_pairs], [1.0, 0.0])
+        self.assertEqual(candidate_hard, 0.5)
 
         res = consolidate(be, tasks, "", "", edit_budget=4, gate_metric="hard", night=1)
 
@@ -1354,7 +1361,6 @@ class TestVerifierDiscipline(unittest.TestCase):
         self.assertEqual(len(res.holdout_detail), 2)
         self.assertGreater(len(res.rejected_edits), 0)
         self.assertIn("definitive answer", res.rejected_edits[0].content)
-
 
 
 class TestDiagnosticsRedaction(unittest.TestCase):
