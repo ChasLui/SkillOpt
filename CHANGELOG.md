@@ -7,6 +7,10 @@ All notable changes to SkillOpt are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Cursor Agent research target harness** (`cursor_exec`) for running
+  supported benchmark rollouts through an installed, authenticated
+  `cursor-agent`, with sandboxed workspaces, structured trace capture, and
+  target-only optimizer separation.
 - **Handoff backend** (`--backend handoff`) for SkillOpt-Sleep — runs the
   sleep cycle with no model subprocess or API key: the engine writes each
   pending model call to `PROMPTS.md`/`pending.json` (exit code 3) and the

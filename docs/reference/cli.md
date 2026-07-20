@@ -3,8 +3,9 @@
 > **Version note.** This reference tracks `main`. PyPI 0.2.0 does not yet
 > include the generic research `openai_compatible` backend, Sleep handoff,
 > Sleep support for non-Azure OpenAI-compatible endpoints, or the Sleep
-> `--preferences` flag; use a source install from `main` for those features
-> until the next release.
+> `--preferences` flag, or the research `cursor_exec` target harness; use a
+> source install from `main` for those
+> features until the next release.
 
 ## Training
 
@@ -90,6 +91,25 @@ python scripts/train.py \
     model.optimizer=deepseek-chat \
     model.target=deepseek-chat
 ```
+
+To benchmark an installed, authenticated Cursor Agent through an environment
+that supports exec targets:
+
+```bash
+python scripts/eval_only.py \
+  --config configs/searchqa/default.yaml \
+  --skill skills/my_skill.md \
+  --cfg-options \
+    model.optimizer_backend=openai_chat \
+    model.target_backend=cursor_exec \
+    model.target=composer-2.5
+```
+
+`cursor_exec` runs the target only; the optimizer remains separately
+configured. Read-only rollouts use Cursor Ask mode. Rollouts that request file
+edits use `--force` inside the benchmark workspace, with Cursor sandboxing
+enabled by default. Override the executable or sandbox through
+`model.cursor_exec_path` and `model.cursor_exec_sandbox`.
 
 ## SkillOpt-Sleep
 

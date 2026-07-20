@@ -51,6 +51,8 @@ _FLATTEN_MAP: dict[str, str] = {
     "model.claude_code_exec_use_sdk": "claude_code_exec_use_sdk",
     "model.claude_code_exec_effort": "claude_code_exec_effort",
     "model.claude_code_exec_max_thinking_tokens": "claude_code_exec_max_thinking_tokens",
+    "model.cursor_exec_path": "cursor_exec_path",
+    "model.cursor_exec_sandbox": "cursor_exec_sandbox",
     "model.codex_trace_to_optimizer": "codex_trace_to_optimizer",
     "model.azure_endpoint": "azure_endpoint",
     "model.azure_api_version": "azure_api_version",
