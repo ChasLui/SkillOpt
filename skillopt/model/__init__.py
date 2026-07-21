@@ -13,8 +13,10 @@ from skillopt.model import qwen_backend as _qwen
 from skillopt.model.backend_config import (  # noqa: F401
     configure_claude_code_exec,
     configure_codex_exec,
+    configure_cursor_exec,
     get_claude_code_exec_config,
     get_codex_exec_config,
+    get_cursor_exec_config,
     get_optimizer_backend,
     get_target_backend,
     is_optimizer_chat_backend,
@@ -53,6 +55,10 @@ def set_backend(name: str | None) -> str:
         set_optimizer_backend("openai_chat")
         set_target_backend(normalized)
         return normalized
+    if normalized in {"cursor", "cursor_agent", "cursor_exec"}:
+        set_optimizer_backend("openai_chat")
+        set_target_backend("cursor_exec")
+        return "cursor_exec"
     if normalized in {"qwen", "qwen_chat"}:
         set_optimizer_backend("openai_chat")
         set_target_backend("qwen_chat")
@@ -84,6 +90,8 @@ def get_backend_name() -> str:
         return "qwen_chat"
     if optimizer == "openai_chat" and target == "minimax_chat":
         return "minimax_chat"
+    if optimizer == "openai_chat" and target == "cursor_exec":
+        return "cursor_exec"
     if optimizer == "openai_compatible" and target == "openai_compatible":
         return "openai_compatible"
     return f"{optimizer}+{target}"

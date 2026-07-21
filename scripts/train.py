@@ -137,7 +137,7 @@ def parse_args() -> argparse.Namespace:
     # Legacy flat CLI overrides (still work, prefer --cfg-options for new usage)
     p.add_argument("--env", type=str)
     p.add_argument("--backend", type=str,
-                   choices=["azure_openai", "codex", "codex_exec", "claude", "claude_chat", "claude_code_exec", "qwen", "qwen_chat", "minimax", "minimax_chat"])
+                   choices=["azure_openai", "codex", "codex_exec", "claude", "claude_chat", "claude_code_exec", "cursor", "cursor_exec", "qwen", "qwen_chat", "minimax", "minimax_chat"])
     p.add_argument("--optimizer_model", type=str)
     p.add_argument("--target_model", type=str)
     p.add_argument("--optimizer_backend", type=str)
@@ -205,6 +205,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--claude_code_exec_use_sdk", type=str)
     p.add_argument("--claude_code_exec_effort", type=str)
     p.add_argument("--claude_code_exec_max_thinking_tokens", type=int)
+    p.add_argument("--cursor_exec_path", type=str)
+    p.add_argument("--cursor_exec_sandbox", type=str)
     p.add_argument("--codex_trace_to_optimizer", type=_BOOL)
     p.add_argument("--skill_init", type=str)
     p.add_argument("--num_epochs", type=int)
@@ -343,6 +345,8 @@ _LEGACY_TO_STRUCTURED: dict[str, str] = {
     "claude_code_exec_use_sdk": "model.claude_code_exec_use_sdk",
     "claude_code_exec_effort": "model.claude_code_exec_effort",
     "claude_code_exec_max_thinking_tokens": "model.claude_code_exec_max_thinking_tokens",
+    "cursor_exec_path": "model.cursor_exec_path",
+    "cursor_exec_sandbox": "model.cursor_exec_sandbox",
     "codex_trace_to_optimizer": "model.codex_trace_to_optimizer",
     "num_epochs": "train.num_epochs",
     "train_size": "train.train_size",
@@ -445,6 +449,11 @@ def load_config(args: argparse.Namespace) -> dict:
         elif backend == "claude_code_exec":
             flat.setdefault("optimizer_backend", "openai_chat")
             flat.setdefault("target_backend", "claude_code_exec")
+        elif backend == "cursor_exec":
+            if not _has_model_override("model.optimizer_backend", "optimizer_backend"):
+                flat["optimizer_backend"] = "openai_chat"
+            if not _has_model_override("model.target_backend", "target_backend"):
+                flat["target_backend"] = "cursor_exec"
         elif backend in {"qwen", "qwen_chat"}:
             flat.setdefault("optimizer_backend", "openai_chat")
             flat.setdefault("target_backend", "qwen_chat")
@@ -482,6 +491,12 @@ def load_config(args: argparse.Namespace) -> dict:
             and not _has_model_override("model.target", "target_model")
         ):
             flat["target_model"] = default_model_for_backend("claude_chat")
+    if flat.get("target_backend") == "cursor_exec":
+        if (
+            str(flat.get("target_model", "") or "").strip() in _OPENAI_DEFAULT_MODEL_SENTINELS
+            and not _has_model_override("model.target", "target_model")
+        ):
+            flat["target_model"] = default_model_for_backend("cursor_exec")
     if flat.get("target_backend") == "qwen_chat":
         if (
             str(flat.get("target_model", "") or "").strip() in _OPENAI_DEFAULT_MODEL_SENTINELS
