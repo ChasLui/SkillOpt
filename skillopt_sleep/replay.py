@@ -4,8 +4,9 @@ Re-run mined TaskRecords offline under a given (skill, memory) and score
 them, producing the (hard, soft) signal SkillOpt's gate consumes.
 
 Single-shot text replay by default. Tasks whose rule judge requires a tool
-call (gbrain's `tool_called`) are run through the backend's real tool loop
-(attempt_with_tools), so tool use is verified honestly rather than self-reported.
+call (gbrain's `tool_called`) use the backend's tool-aware path. Backends that
+cannot enforce that execution boundary fail explicitly rather than scoring a
+self-reported tool call.
 """
 from __future__ import annotations
 
@@ -143,4 +144,3 @@ def multi_objective_reward(
     if total_w <= 0:
         return acc
     return (w_acc * acc + w_tokens * tok_score + w_latency * lat_score) / total_w
-

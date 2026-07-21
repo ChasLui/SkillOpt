@@ -1007,6 +1007,27 @@ def resolve_copilot_path(explicit: str = "") -> str:
     return found or "copilot"
 
 
+def resolve_cursor_path(explicit: str = "") -> str:
+    """Find the Cursor Agent CLI (``cursor-agent``)."""
+    if explicit:
+        return os.path.expanduser(explicit)
+    env = os.environ.get("SKILLOPT_SLEEP_CURSOR_PATH")
+    if env:
+        return os.path.expanduser(env)
+    import shutil
+
+    found = shutil.which("cursor-agent")
+    return found or "cursor-agent"
+
+
+class CursorBackendError(RuntimeError):
+    """A redacted Cursor Agent process or response failure."""
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
+
 class CopilotCliBackend(CliBackend):
     """Drives the GitHub Copilot CLI in non-interactive mode.
 
@@ -1205,6 +1226,221 @@ class CopilotCliBackend(CliBackend):
                 shutil.rmtree(work, ignore_errors=True)
             except Exception:
                 pass
+
+
+class CursorCliBackend(CliBackend):
+    """Drive an authenticated Cursor Agent CLI in an isolated workspace.
+
+    Cursor's JSON print format has one final ``result`` object. Ordinary calls
+    use Ask mode, which is read-only. Tool-aware replay is disabled until the
+    Cursor Agent permission boundary has been validated against the live CLI.
+    """
+
+    name = "cursor"
+    _AUTH_ERROR_MARKERS = (
+        "not authenticated",
+        "authentication required",
+        "not logged in",
+        "please log in",
+        "login required",
+        "unauthorized",
+        "invalid api key",
+        "401",
+        "403",
+    )
+    _CONFIG_ERROR_MARKERS = (
+        "unknown option",
+        "invalid option",
+        "invalid model",
+        "unsupported model",
+        "model not found",
+        "not available for your account",
+        "invalid configuration",
+    )
+    _ASK_DENY = ["Read(**)", "Write(**)", "Mcp(*:*)"]
+
+    def __init__(self, model: str = "", cursor_path: str = "", timeout: int = 240) -> None:
+        super().__init__(model=model or os.environ.get("SKILLOPT_SLEEP_CURSOR_MODEL", ""), timeout=timeout)
+        self.cursor_path = resolve_cursor_path(cursor_path)
+
+    def _command(self, workspace: str) -> List[str]:
+        cmd = [
+            self.cursor_path,
+            "-p",
+            "--output-format",
+            "json",
+            "--trust",
+            "--workspace",
+            workspace,
+            "--mode",
+            "ask",
+        ]
+        if self.model:
+            cmd += ["--model", self.model]
+        return cmd
+
+    @staticmethod
+    def _terminal_result(raw: str) -> Optional[Dict[str, Any]]:
+        candidates = [raw.strip()] if raw.strip() else []
+        candidates.extend(line.strip() for line in raw.splitlines() if line.strip().startswith("{"))
+        for candidate in reversed(candidates):
+            try:
+                obj = json.loads(candidate)
+            except Exception:
+                continue
+            if isinstance(obj, dict) and obj.get("type") == "result":
+                return obj
+        return None
+
+    @classmethod
+    def _parse_json_response(cls, raw: str) -> str:
+        """Return text from the terminal successful Cursor result."""
+        terminal = cls._terminal_result(raw)
+        if terminal is None or terminal.get("is_error") is True:
+            return ""
+        result = terminal.get("result")
+        if isinstance(result, str):
+            return result.strip()
+        return ""
+
+    def _error(self, message: str, *, retryable: bool = False) -> CursorBackendError:
+        import logging
+
+        from skillopt_sleep.staging import redact_secrets
+
+        self.last_call_error = str(redact_secrets(message))[:500]
+        logging.getLogger("skillopt_sleep").warning("Cursor Agent call failed: %s", self.last_call_error)
+        return CursorBackendError(self.last_call_error, retryable=retryable)
+
+    @staticmethod
+    def _isolated_environment(runtime_dir: str) -> Dict[str, str]:
+        config_dir = os.path.join(runtime_dir, "config")
+        data_dir = os.path.join(runtime_dir, "data")
+        os.makedirs(config_dir, exist_ok=True)
+        os.makedirs(data_dir, exist_ok=True)
+        with open(os.path.join(config_dir, "cli-config.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "version": 1,
+                    "editor": {"vimMode": False},
+                    "permissions": {
+                        "allow": [],
+                        "deny": CursorCliBackend._ASK_DENY,
+                    },
+                    "approvalMode": "allowlist",
+                    "sandbox": {
+                        "mode": "disabled",
+                        "networkAccess": "user_config_only",
+                        "networkAllowlist": [],
+                    },
+                    "network": {"useHttp1ForAgent": False},
+                    "hasChangedDefaultModel": False,
+                    "attribution": {
+                        "attributeCommitsToAgent": False,
+                        "attributePRsToAgent": False,
+                    },
+                },
+                f,
+                indent=2,
+            )
+        env = os.environ.copy()
+        env["CURSOR_CONFIG_DIR"] = config_dir
+        env["CURSOR_DATA_DIR"] = data_dir
+        return env
+
+    def _invoke_once(self, prompt: str, workspace: str) -> str:
+        import shutil
+
+        from skillopt_sleep.harvest_cursor import CURSOR_REPLAY_SENTINEL
+
+        self.last_call_error = ""
+        replay_prompt = CURSOR_REPLAY_SENTINEL + "\n\n" + prompt
+        runtime_dir = ""
+        try:
+            runtime_dir = tempfile.mkdtemp(prefix="skillopt_sleep_cursor_runtime_")
+            proc = subprocess.run(
+                self._command(workspace),
+                capture_output=True,
+                creationflags=_NO_WINDOW,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.timeout,
+                cwd=workspace,
+                input=replay_prompt,
+                env=self._isolated_environment(runtime_dir),
+            )
+        except subprocess.TimeoutExpired:
+            raise self._error(
+                f"Cursor Agent timed out after {self.timeout}s",
+                retryable=True,
+            )
+        except Exception as exc:
+            raise self._error(f"Cursor Agent spawn failed: {exc}")
+        finally:
+            if runtime_dir:
+                shutil.rmtree(runtime_dir, ignore_errors=True)
+
+        if proc.returncode != 0:
+            raise self._error(
+                f"Cursor Agent exited {proc.returncode}: {(proc.stderr or '')[:500]}"
+            )
+        terminal = self._terminal_result(proc.stdout or "")
+        if terminal is not None and terminal.get("is_error") is True:
+            detail = terminal.get("result") or terminal.get("error") or proc.stderr or ""
+            raise self._error(f"Cursor Agent returned an error result: {str(detail)[:300]}")
+        output = self._parse_json_response(proc.stdout or "")
+        if not output:
+            detail = (proc.stderr or "").strip()
+            if any(marker in detail.casefold() for marker in self._AUTH_ERROR_MARKERS):
+                raise self._error(
+                    "Cursor Agent authentication failed"
+                    + (f": {detail[:300]}" if detail else "")
+                )
+            if any(marker in detail.casefold() for marker in self._CONFIG_ERROR_MARKERS):
+                raise self._error(
+                    "Cursor Agent configuration failed"
+                    + (f": {detail[:300]}" if detail else "")
+                )
+            raise self._error(
+                "Cursor Agent returned no usable JSON response"
+                + (f": {detail[:300]}" if detail else ""),
+                retryable=True,
+            )
+        self.last_call_error = ""
+        return output
+
+    def _call(self, prompt: str, *, max_tokens: int = 1024) -> str:
+        del max_tokens
+        workspace = tempfile.mkdtemp(prefix="skillopt_sleep_cursor_")
+        try:
+            for attempt in range(2):
+                try:
+                    return self._invoke_once(prompt, workspace)
+                except CursorBackendError as exc:
+                    if not exc.retryable or attempt == 1:
+                        raise
+            raise AssertionError("unreachable")
+        finally:
+            try:
+                import shutil
+
+                shutil.rmtree(workspace, ignore_errors=True)
+            except Exception:
+                pass
+
+    def attempt_with_tools(
+        self,
+        task: TaskRecord,
+        skill: str,
+        memory: str,
+        tools: List[str],
+    ) -> Tuple[str, List[str]]:
+        del task, skill, memory, tools
+        raise self._error(
+            "Cursor tool-aware replay is temporarily disabled pending live "
+            "Cursor permission-boundary validation"
+        )
 
 
 class DualBackend(Backend):
@@ -1564,6 +1800,7 @@ def get_backend(
     model: str = "",
     claude_path: str = "claude",
     codex_path: str = "",
+    cursor_path: str = "",
     azure_endpoint: str = "",
     project_dir: str = "",
 ) -> Backend:
@@ -1579,6 +1816,8 @@ def get_backend(
         return AzureResponsesBackend(deployment=model, endpoints=eps)
     if n in {"copilot", "github_copilot", "copilot_cli", "gh_copilot"}:
         return CopilotCliBackend(model=model)
+    if n in {"cursor", "cursor_agent", "cursor_cli"}:
+        return CursorCliBackend(model=model, cursor_path=cursor_path)
     if n in {"handoff", "session", "file"}:
         # Lazy import: handoff_backend imports CliBackend from this module.
         from skillopt_sleep.handoff_backend import HandoffBackend
@@ -1598,6 +1837,7 @@ def build_backend(
     target_backend: str = "",
     target_model: str = "",
     codex_path: str = "",
+    cursor_path: str = "",
     azure_endpoint: str = "",
     preferences: str = "",
     project_dir: str = "",
@@ -1615,16 +1855,17 @@ def build_backend(
             backend,
             model=model,
             codex_path=codex_path,
+            cursor_path=cursor_path,
             azure_endpoint=azure_endpoint,
             project_dir=project_dir,
         )
         be.preferences = preferences
         return be
     tgt = get_backend(target_backend or backend, model=target_model or model,
-                      codex_path=codex_path, azure_endpoint=azure_endpoint,
+                      codex_path=codex_path, cursor_path=cursor_path, azure_endpoint=azure_endpoint,
                       project_dir=project_dir)
     opt = get_backend(optimizer_backend or backend, model=optimizer_model or model,
-                      codex_path=codex_path, azure_endpoint=azure_endpoint,
+                      codex_path=codex_path, cursor_path=cursor_path, azure_endpoint=azure_endpoint,
                       project_dir=project_dir)
     opt.preferences = preferences  # reflect runs on the optimizer
     dual = DualBackend(target=tgt, optimizer=opt)

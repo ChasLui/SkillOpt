@@ -7,6 +7,10 @@ All notable changes to SkillOpt are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- Native SkillOpt-Sleep support for Cursor, including a local plugin command
+  and skill, Cursor transcript harvesting, and an optional Cursor Agent CLI
+  backend. Cursor tool-aware replay remains disabled pending live permission-
+  boundary validation.
 - **Cursor Agent research target harness** (`cursor_exec`) for running
   supported benchmark rollouts through an installed, authenticated
   `cursor-agent`, with sandboxed workspaces, structured trace capture, and
