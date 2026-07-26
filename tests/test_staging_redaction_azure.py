@@ -28,6 +28,19 @@ def test_connection_string_password_redacted() -> None:
     out = redact_secrets(conn)
     assert "[REDACTED_DB_PASS]" in out
     assert "Sup3rSecret" not in out
+    assert out == "Server=db;Password=[REDACTED_DB_PASS];Database=app"
+
+
+def test_quoted_connection_string_password_redacted() -> None:
+    conn = 'Server=db;Password="Sup3r; Secret!";Database=app'
+    out = redact_secrets(conn)
+    assert out == "Server=db;Password=[REDACTED_DB_PASS];Database=app"
+
+
+def test_generic_secret_redaction_preserves_following_fields() -> None:
+    text = "token=top-secret&request=42;status=failed"
+    out = redact_secrets(text)
+    assert out == "token=[REDACTED]&request=42;status=failed"
 
 
 def test_recurses_into_containers() -> None:
