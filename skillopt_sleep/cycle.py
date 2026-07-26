@@ -96,6 +96,15 @@ def _render_report_md(report: SleepReport, cfg: SleepConfig) -> str:
         for e in report.rejected_edits:
             lines.append(f"- [{e.target}/{e.op}] {e.content}")
         lines.append("")
+    if report.unmatched_edits:
+        lines.append("## Proposed but changed nothing (never reached the gate)")
+        lines.append(
+            "_Anchor not found, duplicate/empty add, or an unknown op. "
+            "These were never scored — check the anchor text if a rule you expected is missing._")
+        for e in report.unmatched_edits:
+            anchor = f"  \n  _anchor: `{e.anchor}`_" if e.anchor else ""
+            lines.append(f"- [{e.target}/{e.op}] {e.content}{anchor}")
+        lines.append("")
     if report.notes:
         lines.append("## Notes")
         for n in report.notes:
@@ -338,7 +347,8 @@ def run_sleep_cycle(
     _progress(
         cfg,
         f"consolidate done: gate={result.gate_action} accepted={result.accepted} "
-        f"edits={len(result.applied_edits)} rejected={len(result.rejected_edits)}",
+        f"edits={len(result.applied_edits)} rejected={len(result.rejected_edits)}"
+        + (f" unmatched={len(result.unmatched_edits)}" if result.unmatched_edits else ""),
     )
 
     report.n_replayed = len(tasks)
@@ -349,6 +359,7 @@ def run_sleep_cycle(
     report.no_edits_reason = getattr(result, "no_edits_reason", "")
     report.edits = result.applied_edits
     report.rejected_edits = result.rejected_edits
+    report.unmatched_edits = result.unmatched_edits
     report.tokens_used = backend.tokens_used()
     report.ended_at = _now_iso(clock)
 
@@ -395,6 +406,7 @@ def run_sleep_cycle(
                     "accepted": result.accepted,
                     "n_applied_edits": len(result.applied_edits),
                     "n_rejected_edits": len(result.rejected_edits),
+                    "n_unmatched_edits": len(result.unmatched_edits),
                     "call_error": redact_secrets(getattr(result, "call_error", "")),
                     "reflect_raw_head": redact_secrets(
                         (getattr(result, "reflect_raw", "") or "")[:1200]
@@ -422,6 +434,7 @@ def run_sleep_cycle(
                candidate_score=report.candidate_score,
                n_applied_edits=len(report.edits),
                n_rejected_edits=len(report.rejected_edits),
+               n_unmatched_edits=len(report.unmatched_edits),
                tokens_used=report.tokens_used, adopted=adopted)
 
     return CycleOutcome(report, staging_dir, adopted, adopted_paths)

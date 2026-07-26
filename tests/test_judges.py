@@ -106,6 +106,22 @@ class TestValidateChecks(unittest.TestCase):
         errors, _warnings = validate_checks({"checks": ["not-an-object"]})
         self.assertEqual(len(errors), 1)
 
+    def test_malformed_judge_is_reported_not_raised(self) -> None:
+        # a tasks file may carry any JSON here; validation must stay structured
+        for bad in (["not", "a", "dict"], "a string", 42):
+            errors, _warnings = validate_checks(bad)
+            self.assertEqual(len(errors), 1, bad)
+            self.assertIn("must be an object", errors[0])
+
+    def test_non_list_checks_is_reported_not_raised(self) -> None:
+        errors, _warnings = validate_checks({"checks": "regex"})
+        self.assertEqual(len(errors), 1)
+        self.assertIn("must be an array", errors[0])
+
+    def test_empty_or_missing_judge_is_sound(self) -> None:
+        for empty in ({}, None, {"checks": []}):
+            self.assertEqual(validate_checks(empty), ([], []), empty)
+
     def test_every_known_op_is_accepted(self) -> None:
         for op in KNOWN_OPS:
             arg = 1 if op.endswith("_chars") else "x"

@@ -90,11 +90,16 @@ def apply_edits_detailed(
     """Apply edits and also report the ones that matched nothing.
 
     Returns ``(new_doc, applied, unmatched)``. An edit lands in ``unmatched``
-    when it changed nothing: a `delete`/`replace` whose anchor is absent, or an
-    `add` that duplicates an existing line. Without this list such edits are
-    invisible — they appear in neither the applied nor the gate-rejected set,
-    so a night can report zero edits while the optimizer actually produced
-    several.
+    whenever it left the document unchanged:
+
+    * ``delete``/``replace`` whose anchor matches no existing line;
+    * ``add`` whose content duplicates an existing line (normalized), or is
+      empty/whitespace;
+    * any unrecognized op.
+
+    Without this list such edits are invisible — they appear in neither the
+    applied nor the gate-rejected set, so a night can report zero edits while
+    the optimizer actually produced several.
     """
     lines = current_learned_lines(doc)
     norm_set = {_norm(line) for line in lines}

@@ -85,7 +85,11 @@ def validate_checks(judge: Dict[str, Any]) -> Tuple[List[str], List[str]]:
     """
     errors: List[str] = []
     warnings: List[str] = []
+    if judge and not isinstance(judge, dict):
+        return [f"judge must be an object, got {type(judge).__name__}"], warnings
     checks = (judge or {}).get("checks", []) or []
+    if not isinstance(checks, list):
+        return [f"judge 'checks' must be an array, got {type(checks).__name__}"], warnings
     for i, c in enumerate(checks):
         if not isinstance(c, dict):
             errors.append(f"check #{i} is not an object")
