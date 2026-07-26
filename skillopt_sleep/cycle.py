@@ -30,6 +30,34 @@ from skillopt_sleep.state import SleepState, _now_iso
 from skillopt_sleep.types import SessionDigest, SleepReport, TaskRecord
 
 
+# ── Model-swap detection (F16) ───────────────────────────────
+def _make_model_key(cfg: SleepConfig) -> str:
+    """Stable string identifying the backend+model combination for this cycle."""
+    return "{}::{}".format(
+        cfg.get("backend", "mock"),
+        cfg.get("model", ""),
+    )
+
+
+def _check_model_change(cfg: SleepConfig, state: SleepState) -> None:
+    """Warn when the backend/model has changed since the last night.
+
+    Skill text is backend-specific; adopting edits from a different model's
+    reflections into a new model's skill file can cause regressions.
+    This is advisory only — the cycle continues either way.
+    """
+    current_key = _make_model_key(cfg)
+    prior_key = state.last_model_key
+    if prior_key and prior_key != current_key:
+        print(
+            f"[sleep] WARNING: model changed since last night "
+            f"(was {prior_key!r}, now {current_key!r}). "
+            "Learned skill text may not transfer cleanly. "
+            "Consider starting from a fresh skill document.",
+            file=sys.stderr,
+        )
+
+
 @dataclass
 class CycleOutcome:
     report: SleepReport
@@ -127,6 +155,7 @@ def run_sleep_cycle(
     """
     cfg = cfg or load_config()
     state = SleepState.load(cfg.state_path)
+    _check_model_change(cfg, state)  # F16: warn if model changed between nights
     night = state.begin_night(clock)
     project = _project_paths(cfg)
     started = _now_iso(clock)
@@ -409,6 +438,7 @@ def run_sleep_cycle(
             "baseline": result.baseline_score, "candidate": result.candidate_score,
             "n_tasks": len(tasks), "staging": staging_dir,
         })
+        state.set_last_model_key(_make_model_key(cfg))  # F16: track model for next night
         # ── 6. adopt (opt-in) ────────────────────────────────────────────
         if cfg.get("auto_adopt") and result.accepted:
             adopted_paths = adopt_staging(staging_dir)
