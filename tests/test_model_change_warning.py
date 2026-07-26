@@ -15,10 +15,12 @@ def _cfg():
 
 
 def test_last_model_key_roundtrips(tmp_path) -> None:
-    state = SleepState.load(str(tmp_path / "state.json"))
+    path = str(tmp_path / "state.json")
+    state = SleepState.load(path)
     assert state.last_model_key == ""
     state.set_last_model_key("anthropic::claude")
-    assert state.last_model_key == "anthropic::claude"
+    state.save()
+    assert SleepState.load(path).last_model_key == "anthropic::claude"
 
 
 def test_warns_when_model_changed(tmp_path, capsys) -> None:
@@ -45,6 +47,50 @@ def test_no_warning_when_model_same(tmp_path, capsys) -> None:
     assert "model changed" not in capsys.readouterr().err
 
 
+def test_model_key_tracks_effective_optimizer_and_target_roles() -> None:
+    cfg = load_config(
+        backend="mock",
+        model="shared",
+        optimizer_backend="claude",
+        optimizer_model="opus",
+        target_backend="codex",
+        target_model="gpt",
+    )
+    assert _make_model_key(cfg) == (
+        "optimizer=claude::opus;target=codex::gpt"
+    )
+
+    inherited = load_config(
+        backend="mock",
+        model="shared",
+        optimizer_backend="claude",
+    )
+    assert _make_model_key(inherited) == (
+        "optimizer=claude::shared;target=mock::shared"
+    )
+
+
+def test_warns_when_one_split_backend_role_changes(tmp_path, capsys) -> None:
+    previous = load_config(
+        optimizer_backend="claude",
+        optimizer_model="opus",
+        target_backend="codex",
+        target_model="gpt",
+    )
+    current = load_config(
+        optimizer_backend="claude",
+        optimizer_model="opus",
+        target_backend="cursor",
+        target_model="composer",
+    )
+    state = SleepState.load(str(tmp_path / "state.json"))
+    state.set_last_model_key(_make_model_key(previous))
+
+    _check_model_change(current, state)
+
+    assert "model changed since last night" in capsys.readouterr().err
+
+
 def test_cli_api_key_emits_deprecation_warning() -> None:
     from scripts.train import load_config as train_load_config
 
@@ -64,3 +110,34 @@ def test_cli_api_key_emits_deprecation_warning() -> None:
         and "azure_openai_api_key" in str(w.message)
         for w in caught
     )
+
+
+def test_cli_key_warnings_name_the_correct_environment_variable() -> None:
+    from scripts.train import load_config as train_load_config
+
+    cases = {
+        "optimizer_azure_openai_api_key": "OPTIMIZER_AZURE_OPENAI_API_KEY",
+        "target_azure_openai_api_key": "TARGET_AZURE_OPENAI_API_KEY",
+        "qwen_chat_api_key": "QWEN_CHAT_API_KEY",
+        "optimizer_qwen_chat_api_key": "OPTIMIZER_QWEN_CHAT_API_KEY",
+        "target_qwen_chat_api_key": "TARGET_QWEN_CHAT_API_KEY",
+        "minimax_api_key": "MINIMAX_API_KEY",
+    }
+    for flag, environment_variable in cases.items():
+        args = argparse.Namespace(
+            config="configs/_base_/default.yaml",
+            cfg_options=None,
+            **{flag: "secret-value"},
+        )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            try:
+                train_load_config(args)
+            except Exception:
+                pass
+        messages = [
+            str(w.message)
+            for w in caught
+            if issubclass(w.category, DeprecationWarning)
+        ]
+        assert any(environment_variable in message for message in messages), flag
