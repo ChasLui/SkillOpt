@@ -1,19 +1,23 @@
 # Security Considerations for Superpowers Adapter
 
-## Execution Model
+## Scope: trusted candidates only
 
-The Superpowers adapter runs Claude Code with candidate skills that control agent behavior. A candidate skill is **untrusted input**: it can
+This adapter evaluates **trusted, locally-authored** candidate skills. It is
+explicitly **not** hardened against a hostile candidate, and must not be pointed
+at model-generated or third-party skills.
+
+There is no OS-level boundary. The evaluated agent gets `Bash`, `Read`, `Write`
+and `Edit`, and runs as the same OS user as the harness, so it can:
 
 - Execute arbitrary shell commands
-- Read/write files reachable by the process
-- Read environment variables passed to the process
-- Make network requests
+- Read/write any file that user can reach, including the harness's own evidence
+- Read the environment passed to the process
+- Make unrestricted network requests
 
 `--allowedTools` scopes which tools the agent may call. It is **not** an
-isolation boundary — `Bash` and `Read` are granted, so anything the process can
-reach, the candidate can reach.
+isolation boundary.
 
-## Current Mitigations
+## What the adapter does do
 
 1. **No host credential reuse by default.** The scenario `HOME` is empty; host
    `~/.claude/credentials.json` and `settings.json` are never copied or
@@ -23,60 +27,47 @@ reach, the candidate can reach.
 3. **Scrubbed environment.** Only `HOME`, `PATH`, `TERM`, `LANG` and (if set)
    `ANTHROPIC_API_KEY` are passed; the host environment is not inherited. `PATH`
    is minimal by default (shim dir + `/usr/bin:/bin`); opt in to the host `PATH`
-   with `SKILLOPT_INHERIT_PATH=1`. Note this is convenience/hygiene, not a
-   boundary — a `Bash`-holding agent can still call absolute paths.
+   with `SKILLOPT_INHERIT_PATH=1`. Hygiene, not a boundary — a `Bash`-holding
+   agent can still call absolute paths.
 4. **Isolated project and HOME** per scenario, inside a temp workspace.
-5. **OS-level sandbox** (⚠️ **experimental, not yet validated end-to-end**),
-   opt-in via `SKILLOPT_SANDBOX=bwrap|docker`. The `bwrap` path is the intended
-   Linux boundary; both modes are provided as scaffolding and are not exercised
-   in CI. Treat them as a starting point, not a hardened guarantee — details
-   like the in-container interpreter/`claude` binary (`SKILLOPT_CLAUDE_BIN`,
-   `SKILLOPT_SHIM_PYTHON`) may need tuning for your image.
-6. **Execution evidence.** `harness_test_passes` re-runs the tests after the
-   agent exits — this is unforgeable and is the authoritative gate. `pytest_runs`
-   (nonce-tagged invocation log) is tamper-**evident**, not tamper-proof: an
-   unsandboxed agent runs as the same OS user with `Bash` and can reach the log,
-   so treat the count as corroborating unless running under `SKILLOPT_SANDBOX`.
+5. **Execution evidence.** All of it is tamper-**evident**, not tamper-proof —
+   the agent can reach the shim, the nonce and the audit log, and can modify the
+   project tree the harness re-runs from. It is meaningful because the candidate
+   is trusted; it is not an adversarial oracle.
+   - `harness_test_passes` — the harness re-runs the tests itself after the
+     agent exits, so agent *output* alone cannot fake a pass.
+   - `pytest_runs` — count of nonce-tagged invocations of the `pytest`/`python`
+     shims.
+   - `pytest_after_edit` — the last shim invocation is newer than the newest
+     project `*.py`, so "fix, then claim done without re-running" fails.
 
-   ⚠️ The verification re-run **executes the (agent-modified) project code**. When
-   `SKILLOPT_SANDBOX` is set, the re-run goes through the same sandbox as the
-   agent, so untrusted code does not run on the host. In the default (no-sandbox)
-   mode it runs on the host — acceptable only for trusted candidates. Never
-   evaluate an untrusted candidate without `SKILLOPT_SANDBOX`.
+   ⚠️ The verification re-run **executes agent-modified project code on the
+   host**. `ANTHROPIC_API_KEY` is dropped from that re-run's environment, but
+   nothing else confines it.
 
 ## Known Limitations
 
 - **API key exposure**: `ANTHROPIC_API_KEY`, if set, is visible to the agent
-  process. Use a scoped/disposable key, or run under `SKILLOPT_SANDBOX=docker`
-  with a key injected per run.
-- **`SKILLOPT_HOST_AUTH=1` exposes host credentials** to the candidate. Trusted
-  candidates only. Combining it with `SKILLOPT_SANDBOX` is refused (the host
-  `~/.claude` is not mounted, so the symlinks would dangle) — use
-  `ANTHROPIC_API_KEY` inside the sandbox instead.
-- **`SKILLOPT_UNSAFE=1`** disables permission checks entirely. Trusted
-  candidates only.
-- **No network isolation** in the default (unsandboxed) path.
+  process. Use a scoped/disposable key.
+- **`SKILLOPT_HOST_AUTH=1` exposes host credentials** to the candidate.
+- **`SKILLOPT_UNSAFE=1`** disables permission checks entirely.
+- **No network isolation**, for either the agent or the verification re-run.
 
-## Recommendations
+## Usage
 
-### Trusted candidates (your own skill, local machine)
 ```bash
 ANTHROPIC_API_KEY=... python -m skillopt_sleep.adapters.superpowers --candidate my_skill.md
 ```
 
-### Untrusted or model-generated candidates
-```bash
-# Linux
-SKILLOPT_SANDBOX=bwrap ANTHROPIC_API_KEY=... \
-  python -m skillopt_sleep.adapters.superpowers --candidate untrusted.md
-
-# Container
-SKILLOPT_SANDBOX=docker SKILLOPT_SANDBOX_IMAGE=skillopt-sandbox ANTHROPIC_API_KEY=... \
-  python -m skillopt_sleep.adapters.superpowers --candidate untrusted.md
-```
-
 ## Follow-up Work
 
-- [ ] Published sandbox image with Claude Code + pytest preinstalled
+Supporting untrusted candidates is deliberately out of scope for this adapter as
+shipped. It would need, at minimum:
+
+- [ ] Verification oracle and evidence (nonce, shim, audit log) held outside
+      every agent-writable mount
+- [ ] Harness re-run from an immutable copy of the test inputs
+- [ ] A validated OS-level sandbox: published image with Claude Code + pytest,
+      exercised in CI, fail-closed on an unrecognised mode
 - [ ] Network egress allowlist (api.anthropic.com only)
 - [ ] Per-run scoped API keys

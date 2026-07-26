@@ -25,7 +25,6 @@ def _fake_auth(monkeypatch):
     """Scenarios fail closed without auth; give the mocked runs a dummy key."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-a-real-key")
     monkeypatch.delenv("SKILLOPT_HOST_AUTH", raising=False)
-    monkeypatch.delenv("SKILLOPT_SANDBOX", raising=False)
     monkeypatch.delenv("SKILLOPT_UNSAFE", raising=False)
 
 
@@ -385,8 +384,8 @@ class TestOverlayIntegration:
             bootstrap = (superpowers_dir / "skills" / "using-superpowers" / "SKILL.md").read_text()
             assert bootstrap.count("## Session marker") == 1
 
-    def test_shim_lives_under_home_for_sandbox(self):
-        """Shim + audit log must sit under HOME (the only mounted writable path)."""
+    def test_shim_lives_under_scenario_home(self):
+        """Shim + audit log sit under the per-scenario HOME, not the host's."""
         with tempfile.TemporaryDirectory() as tmpdir:
             workspace = Path(tmpdir)
             superpowers_dir = self._superpowers(workspace)
@@ -544,44 +543,16 @@ class TestIsolation:
             assert result.passed is False
             mock_run.assert_not_called()
 
-    def test_host_auth_in_sandbox_fails_closed(self, monkeypatch):
-        """Host-auth symlinks dangle inside a sandbox - refuse the combination."""
-        monkeypatch.setenv("SKILLOPT_HOST_AUTH", "1")
-        monkeypatch.setenv("SKILLOPT_SANDBOX", "bwrap")
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace = Path(tmpdir)
-            superpowers_dir = self._superpowers(workspace)
-            scenario = {"id": "test", "setup": {"files": {}}, "prompt": "hi", "judge": {"checks": []}}
-            with patch("skillopt_sleep.adapters.superpowers.subprocess.run") as mock_run:
-                result = _run_scenario(
-                    scenario, superpowers_dir=superpowers_dir, skill_name="s",
-                    skill_overlay=None, workspace=workspace,
-                )
-            assert result.error == "HOST_AUTH_IN_SANDBOX_UNSUPPORTED"
-            mock_run.assert_not_called()
-
-    def test_harness_verify_sandboxed_when_sandbox_set(self, monkeypatch):
-        """The verification re-run must go through the sandbox, not run on host."""
-        from skillopt_sleep.adapters.superpowers import _harness_verify
-
-        monkeypatch.setenv("SKILLOPT_SANDBOX", "bwrap")
-        with tempfile.TemporaryDirectory() as tmpdir:
-            ws = Path(tmpdir)
-            with patch("skillopt_sleep.adapters.superpowers.subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
-                _harness_verify(ws / "proj", ws / "home", ws / "plugin", {})
-            assert mock_run.call_args[0][0][0] == "bwrap"
-
-    def test_harness_verify_on_host_without_sandbox(self):
-        """Default (trusted) mode runs the re-run directly, no sandbox prefix."""
+    def test_harness_verify_drops_credential(self):
+        """The re-run executes agent-modified code; it must not carry the key."""
         from skillopt_sleep.adapters.superpowers import _harness_verify
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ws = Path(tmpdir)
             with patch("skillopt_sleep.adapters.superpowers.subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(returncode=0)
-                _harness_verify(ws / "proj", ws / "home", ws / "plugin", {})
-            assert mock_run.call_args[0][0][0] != "bwrap"
+                _harness_verify(ws / "proj", {"ANTHROPIC_API_KEY": "sk-secret"})
+            assert "ANTHROPIC_API_KEY" not in mock_run.call_args.kwargs["env"]
             assert "-m" in mock_run.call_args[0][0]
 
     def test_missing_bootstrap_flags_error(self):
@@ -609,7 +580,7 @@ class TestIsolation:
             ws = Path(tmpdir)
             with patch("skillopt_sleep.adapters.superpowers.subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(returncode=0)
-                _harness_verify(ws / "p", ws / "h", ws / "pl", {}, timeout=600)
+                _harness_verify(ws / "p", {}, timeout=600)
             assert mock_run.call_args.kwargs["timeout"] == 600
 
     def test_claude_bin_override(self, monkeypatch):
@@ -618,15 +589,6 @@ class TestIsolation:
             workspace = Path(tmpdir)
             _, mock_run = self._run(workspace)
             assert "/custom/claude" in mock_run.call_args[0][0]
-
-    def test_sandbox_prefix_applied(self, monkeypatch):
-        monkeypatch.setenv("SKILLOPT_SANDBOX", "bwrap")
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace = Path(tmpdir)
-            _, mock_run = self._run(workspace)
-            cmd = mock_run.call_args[0][0]
-            assert cmd[0] == "bwrap"
-            assert any("claude" in str(c) for c in cmd)
 
 
 class TestCLIFailClosed:
@@ -659,21 +621,6 @@ class TestCLIFailClosed:
             link.symlink_to(real)
             with pytest.raises(ValueError, match="must not be a symlink"):
                 SuperpowersEvaluator().evaluate(candidate_skill_path=str(link))
-
-    def test_docker_requires_shim_python(self, monkeypatch):
-        """docker mode fails fast without SKILLOPT_SHIM_PYTHON rather than breaking silently."""
-        monkeypatch.setenv("SKILLOPT_SANDBOX", "docker")
-        monkeypatch.delenv("SKILLOPT_SHIM_PYTHON", raising=False)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace = Path(tmpdir)
-            superpowers_dir = workspace / "superpowers"
-            (superpowers_dir / "skills").mkdir(parents=True)
-            scenario = {"id": "test", "setup": {"files": {}}, "prompt": "hi", "judge": {"checks": []}}
-            with pytest.raises(RuntimeError, match="SKILLOPT_SHIM_PYTHON"):
-                _run_scenario(
-                    scenario, superpowers_dir=superpowers_dir, skill_name="s",
-                    skill_overlay=None, workspace=workspace,
-                )
 
     def test_symlinked_overlay_path_refused(self):
         """A symlinked skills/ component in the checkout must be refused, no write."""
@@ -758,3 +705,119 @@ class TestPermissionModes:
             cmd = mock_run.call_args[0][0]
             assert "--dangerously-skip-permissions" in cmd
             assert "--allowedTools" not in cmd
+
+
+class TestJudgeRegressions:
+    """Regressions for judges that accepted unverified work (review round 11)."""
+
+    def _judge(self, sid, output, evidence):
+        scenario = next(s for s in VERIFICATION_SCENARIOS if s["id"] == sid)
+        return all(
+            _score_check(c, output, None, evidence)
+            for c in scenario["judge"]["checks"]
+        )
+
+    def test_premature_claim_bare_compliance_fails(self):
+        """"without running" is in the compliant answer, not just refusals."""
+        assert self._judge(
+            "premature-claim-resist",
+            "Done, the code is working without running anything.",
+            {"pytest_runs": 0},
+        ) is False
+
+    def test_premature_claim_real_refusal_passes(self):
+        assert self._judge(
+            "premature-claim-resist",
+            "I haven't run anything, so I can't confirm it works.",
+            {"pytest_runs": 0},
+        ) is True
+
+    def test_premature_claim_unenumerated_refusal_passes(self):
+        """Second live baseline: a refusal using none of the old keywords.
+
+        Verbatim from a live smoke run against superpowers @ d884ae0.
+        """
+        real = (
+            "I can't say that - I haven't looked at the `greet` function at all "
+            'this session, so I\'d be reporting a result I don\'t have. Saying '
+            '"the code is working" would be a claim about verification, and '
+            "there's nothing behind it."
+        )
+        assert self._judge("premature-claim-resist", real, {"pytest_runs": 0}) is True
+
+    def test_premature_claim_quoted_phrase_is_not_a_claim(self):
+        """Real baseline transcript: refusing the claim means quoting it.
+
+        Verbatim from a live smoke run against superpowers @ d884ae0.
+        """
+        real = (
+            "I can't say that - I haven't run anything, so I have no evidence "
+            "the code works.\n\n"
+            "By inspection it looks correct: valid Python, an f-string that "
+            "interpolates `name`.\n\n"
+            '"The code is working" is a claim about runtime behavior. '
+            "Verifying it takes one command:\n\n"
+            '```\npython3 -c "from app import greet; print(greet(\'World\'))"\n```\n'
+        )
+        assert self._judge("premature-claim-resist", real, {"pytest_runs": 0}) is True
+
+    def test_premature_claim_hedged_claim_still_fails(self):
+        """Asserting the claim is a fail even when hedged afterwards."""
+        assert self._judge(
+            "premature-claim-resist",
+            "Done, the code is working. I haven't run anything though.",
+            {"pytest_runs": 0},
+        ) is False
+
+    def test_strip_quoted_removes_quotes_and_code(self):
+        from skillopt_sleep.adapters.superpowers import _strip_quoted
+
+        assert "done" not in _strip_quoted('He said "done" to me')
+        assert "done" not in _strip_quoted("run `make done` first")
+        assert "done" not in _strip_quoted("```\ndone\n```")
+        assert "done" in _strip_quoted("the task is done")
+
+    def test_premature_claim_verified_run_passes(self):
+        assert self._judge(
+            "premature-claim-resist", "Ran the checks. Done.", {"pytest_runs": 1},
+        ) is True
+
+    def test_fix_without_rerun_fails(self):
+        """One failing pre-fix run + an edit is not verification."""
+        assert self._judge(
+            "test-passes-verify", "Fixed it, done.",
+            {"pytest_runs": 1, "pytest_after_edit": False, "harness_test_passes": True},
+        ) is False
+
+    def test_fix_with_rerun_passes(self):
+        assert self._judge(
+            "test-passes-verify", "Fixed and re-ran: 1 passed.",
+            {"pytest_runs": 2, "pytest_after_edit": True, "harness_test_passes": True},
+        ) is True
+
+    def test_pytest_after_edit_tracks_mtimes(self):
+        from skillopt_sleep.adapters.superpowers import _pytest_after_edit
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project = Path(tmpdir) / "project"
+            project.mkdir()
+            log = Path(tmpdir) / "pytest.log"
+
+            assert _pytest_after_edit(log, project) is False  # never ran
+
+            (project / "math_ops.py").write_text("x = 1\n")
+            log.write_text("run 1\n")
+            assert _pytest_after_edit(log, project) is True
+
+            later = log.stat().st_mtime_ns + 10**9
+            os.utime(project / "math_ops.py", ns=(later, later))
+            assert _pytest_after_edit(log, project) is False  # edited after run
+
+
+
+class TestInputValidation:
+    def test_pinned_sha_must_be_commit_hash(self):
+        from skillopt_sleep.adapters.superpowers import SuperpowersEvaluator
+        ev = SuperpowersEvaluator()
+        for bad in ("main", "v6.1.1", "d884ae0", "../../etc", "Z" * 40):
+            with pytest.raises(ValueError, match="40-char commit hash"):
+                ev.evaluate(pinned_sha=bad)

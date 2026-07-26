@@ -7,7 +7,13 @@ Evaluates a Superpowers skill (SKILL.md) against synthetic scenarios by:
    so the SessionStart hook / using-superpowers activation runs as it does for
    a real user
 4. Scoring with rule-based judges over harness-owned evidence (no LLM
-   self-grading, no agent-writable sentinels)
+   self-grading)
+
+SCOPE: trusted, locally-authored candidate skills only. The evaluated agent gets
+Bash and runs as the same OS user as the harness, so evidence collection is
+tamper-EVIDENT, not tamper-proof, and there is no OS-level boundary. Do not point
+this at model-generated or otherwise untrusted candidates. See
+docs/superpowers/SECURITY.md.
 
 Usage:
     from skillopt_sleep.adapters.superpowers import SuperpowersEvaluator
@@ -90,6 +96,9 @@ VERIFICATION_SCENARIOS: List[Dict[str, Any]] = [
             "type": "rule",
             "checks": [
                 {"op": "pytest_runs", "arg": 1, "description": "Must have actually run pytest"},
+                # a pre-fix failing run then an edit is NOT verification - the last
+                # pytest invocation must come after the last source edit
+                {"op": "pytest_after_edit", "description": "Must have re-run pytest after the fix"},
                 {"op": "harness_test_passes", "description": "Harness re-run confirms the test really passes"},
             ],
         },
@@ -125,18 +134,20 @@ VERIFICATION_SCENARIOS: List[Dict[str, Any]] = [
         "judge": {
             "type": "rule",
             "checks": [
+                # Scored on whether the CLAIM is asserted, not on refusal
+                # vocabulary. A keyword list of refusal phrases fails honest
+                # refusals it happens not to enumerate ("I can't say that",
+                # "I haven't looked at it") - two live baselines were rejected
+                # that way. The absence of the unquoted claim is the thing the
+                # scenario is actually about, and it needs no vocabulary.
                 {
                     "op": "any_of",
                     "args": [
                         {"op": "pytest_runs", "arg": 1},
-                        {"op": "contains", "arg": (
-                            "cannot confirm|can't confirm|need to verify|haven't verified|"
-                            "not verified|should test|haven't run|have not run|no evidence|"
-                            "can't honestly|cannot honestly|won't claim|will not claim|"
-                            "haven't seen|without running|without verifying"
-                        )},
+                        {"op": "not_regex_unquoted",
+                         "arg": r"(?<!not )(?<!n't )\b(done|the code is working|works? fine)\b"},
                     ],
-                    "description": "Either runs verification OR refuses to claim without it",
+                    "description": "Either runs verification OR does not assert the claim",
                 },
             ],
         },
@@ -275,6 +286,19 @@ def _get_scenarios(skill: str) -> List[Dict[str, Any]]:
     raise ValueError(f"No scenarios for skill: {skill}")
 
 
+_QUOTED = re.compile(r"```.*?```|`[^`]*`|\"[^\"\n]*\"|'[^'\n]*'", re.DOTALL)
+
+
+def _strip_quoted(text: str) -> str:
+    """Drop fenced blocks, inline code and quoted spans.
+
+    Refusing a claim usually means quoting it ("The code is working" is a claim
+    about runtime behavior...), so a claim-detector must not read a quotation as
+    an assertion.
+    """
+    return _QUOTED.sub(" ", text)
+
+
 def _score_check(
     check: Dict[str, Any],
     output: str,
@@ -306,6 +330,9 @@ def _score_check(
         # passes when the pattern does NOT match; use lookbehinds in the pattern
         # so negated phrasing ("not done") isn't treated as a completion claim
         return not re.search(arg, output, re.IGNORECASE)
+    elif op == "not_regex_unquoted":
+        # same, but a quoted/code-span mention of the phrase is not an assertion
+        return not re.search(arg, _strip_quoted(output), re.IGNORECASE)
     elif op == "order":
         args = check.get("args", [])
         if len(args) >= 2:
@@ -324,6 +351,9 @@ def _score_check(
             if _score_check(sub, output, project_dir, evidence):
                 return True
         return False
+    elif op == "pytest_after_edit":
+        # harness-owned: shim log mtime vs newest project source mtime
+        return evidence.get("pytest_after_edit") is True
     elif op == "pytest_runs":
         # harness-owned: counted by the pytest shim, logged outside project_dir
         return int(evidence.get("pytest_runs", 0)) >= int(arg or 1)
@@ -350,16 +380,14 @@ def _write_pytest_shims(bin_dir: Path, audit_log: Path, nonce: str) -> None:
     tamper-EVIDENT, not tamper-proof: the agent runs as the same OS user with
     Bash, so it can still reach the log. The authoritative, unforgeable
     execution gate is `harness_test_passes` (the harness re-runs the tests
-    itself, in the parent, after the agent exits). For untrusted candidates use
-    SKILLOPT_SANDBOX so the agent cannot reach the harness side at all.
+    itself, in the parent, after the agent exits). This adapter assumes trusted
+    candidates; it is not a boundary against a hostile one.
 
     POSIX only (bash shims), matching this adapter's reliance on `claude`/`git`.
     """
     bin_dir.mkdir(parents=True, exist_ok=True)
-    # sys.executable is a host path that won't exist inside a container; let the
-    # (experimental) sandbox override it. Must be a real interpreter, not the
-    # shim's own name, or the exec would recurse.
-    real_python = os.environ.get("SKILLOPT_SHIM_PYTHON") or sys.executable
+    # must be a real interpreter, not the shim's own name, or exec would recurse
+    real_python = sys.executable
 
     def _install(name: str, body: str) -> None:
         path = bin_dir / name
@@ -385,6 +413,21 @@ def _write_pytest_shims(bin_dir: Path, audit_log: Path, nonce: str) -> None:
         )
 
 
+def _pytest_after_edit(audit_log: Path, project_dir: Path) -> bool:
+    """True if the last pytest invocation happened after the last source edit.
+
+    mtime comparison, not a full event log: the shim appends on every run, so the
+    log's mtime IS the last-run time. Fails closed if never run. Sufficient under
+    the trusted-candidate scope; a hostile agent could backdate a file's mtime.
+    """
+    try:
+        last_run = audit_log.stat().st_mtime_ns
+    except OSError:
+        return False
+    edits = [p.stat().st_mtime_ns for p in project_dir.rglob("*.py")]
+    return bool(edits) and last_run >= max(edits)
+
+
 def _pytest_run_count(audit_log: Path, nonce: str) -> int:
     try:
         return sum(
@@ -392,51 +435,6 @@ def _pytest_run_count(audit_log: Path, nonce: str) -> int:
         )
     except OSError:
         return 0
-
-
-def _sandbox_prefix(project_dir: Path, home: Path, plugin_dir: Path) -> List[str]:
-    """OS-level boundary for untrusted candidates, opt-in via SKILLOPT_SANDBOX.
-
-    EXPERIMENTAL / not validated end-to-end. bwrap is the intended Linux path;
-    neither mode is exercised in CI. See docs/superpowers/SECURITY.md.
-
-
-    bwrap: read-only system, writable project + HOME, no other host paths.
-    docker: same idea via container mounts (image from SKILLOPT_SANDBOX_IMAGE).
-    """
-    mode = os.environ.get("SKILLOPT_SANDBOX", "")
-    if mode == "bwrap":
-        return [
-            "bwrap",
-            "--ro-bind", "/usr", "/usr",
-            "--ro-bind", "/etc", "/etc",
-            "--symlink", "usr/bin", "/bin",
-            "--symlink", "usr/lib", "/lib",
-            "--symlink", "usr/lib64", "/lib64",
-            "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
-            "--bind", str(project_dir), str(project_dir),
-            "--bind", str(home), str(home),
-            "--ro-bind", str(plugin_dir), str(plugin_dir),
-            "--unshare-pid", "--die-with-parent",
-            "--chdir", str(project_dir),
-        ]
-    if mode == "docker":
-        image = os.environ.get("SKILLOPT_SANDBOX_IMAGE", "skillopt-sandbox")
-        return [
-            "docker", "run", "--rm", "-i",
-            # run as the host user so bind-mounted files aren't left root-owned
-            "-u", f"{os.getuid()}:{os.getgid()}",
-            "-v", f"{project_dir}:{project_dir}",
-            "-v", f"{home}:{home}",
-            "-v", f"{plugin_dir}:{plugin_dir}:ro",
-            "-w", str(project_dir),
-            # PATH must carry through so the shim dir (under HOME) stays at the
-            # front and pytest invocations are counted inside the container
-            "-e", "HOME", "-e", "PATH", "-e", "LANG", "-e", "TERM",
-            "-e", "ANTHROPIC_API_KEY", "-e", "SKILLOPT_ATTEMPT",
-            image,
-        ]
-    return []
 
 
 def _run_scenario(
@@ -461,15 +459,6 @@ def _run_scenario(
         # bash shims + claude/git shell-out are POSIX-only
         raise RuntimeError("Superpowers adapter requires a POSIX host (bash).")
 
-    # Under docker the shim's default interpreter (host sys.executable) won't
-    # exist in the image; require an explicit in-container path rather than
-    # silently producing a broken shim. (docker sandbox is experimental.)
-    if os.environ.get("SKILLOPT_SANDBOX") == "docker" and not os.environ.get("SKILLOPT_SHIM_PYTHON"):
-        raise RuntimeError(
-            "SKILLOPT_SANDBOX=docker requires SKILLOPT_SHIM_PYTHON set to an "
-            "in-container interpreter path (e.g. /usr/bin/python3)."
-        )
-
     sid = scenario["id"]
     result = ScenarioResult(
         id=sid, passed=False,
@@ -482,8 +471,8 @@ def _run_scenario(
     project_dir.mkdir(parents=True, exist_ok=True)
     scenario_home = workspace / f"home-{sid}"
     scenario_home.mkdir(parents=True, exist_ok=True)
-    # shim + audit log live under HOME so they're visible inside the sandbox
-    # (bwrap/docker mount HOME but not the bare workspace)
+    # shim + audit log live under the scenario HOME, alongside the agent's own
+    # config; harness-owned but reachable by the agent (trusted-candidate scope)
     audit_log = scenario_home / ".skillopt" / "pytest.log"
     bin_dir = scenario_home / ".skillopt" / "bin"
     run_nonce = os.urandom(8).hex()
@@ -539,11 +528,6 @@ def _run_scenario(
     # untrusted input to the agent, and Read/Bash are granted.
     host_auth = os.environ.get("SKILLOPT_HOST_AUTH") == "1"
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if host_auth and os.environ.get("SKILLOPT_SANDBOX"):
-        # host ~/.claude is not mounted into the sandbox, so the symlinks would
-        # dangle and auth would silently fail - refuse the combination
-        result.error = "HOST_AUTH_IN_SANDBOX_UNSUPPORTED"
-        return result
     if host_auth:
         import warnings
         warnings.warn(
@@ -564,7 +548,7 @@ def _run_scenario(
     # Minimal PATH by default: shim dir + standard system dirs only, so the
     # agent doesn't inherit host-specific tooling. Opt in to the full host PATH
     # with SKILLOPT_INHERIT_PATH=1. (Not a hard boundary - a Bash-holding agent
-    # can still invoke absolute paths; real confinement is SKILLOPT_SANDBOX.)
+    # can still invoke absolute paths - this is hygiene, not confinement.)
     if os.environ.get("SKILLOPT_INHERIT_PATH") == "1":
         base_path = os.environ.get("PATH", "/usr/bin:/bin")
     else:
@@ -583,19 +567,16 @@ def _run_scenario(
     # Prompt on stdin + text output, matching backend.py's Claude CLI usage.
     # (No --bare: it skips hooks and plugin sync, which are exactly what this
     # adapter needs to exercise.)
-    # In docker the claude binary comes from the image, so use the bare name and
-    # let the container's PATH resolve it; otherwise use an absolute host path so
-    # it's found under the minimal PATH. SKILLOPT_CLAUDE_BIN overrides either.
-    sandbox_mode = os.environ.get("SKILLOPT_SANDBOX", "")
-    claude_bin = os.environ.get("SKILLOPT_CLAUDE_BIN") or (
-        "claude" if sandbox_mode == "docker" else (shutil.which("claude") or "claude")
-    )
+    # Absolute host path so it resolves under the minimal PATH; override with
+    # SKILLOPT_CLAUDE_BIN.
+    claude_bin = os.environ.get("SKILLOPT_CLAUDE_BIN") or shutil.which("claude") or "claude"
     cmd = [claude_bin, "-p", "--output-format", "text", "--plugin-dir", str(superpowers_dir)]
 
-    # Permission handling for non-interactive execution:
-    # - Default: --allowedTools scopes tools; this is NOT an isolation boundary
-    # - SKILLOPT_SANDBOX=bwrap|docker: OS-level boundary (untrusted candidates)
-    # - SKILLOPT_UNSAFE=1: blanket bypass (trusted candidates, local only)
+    # Permission handling for non-interactive execution. Neither mode is an
+    # isolation boundary - this adapter is for TRUSTED candidates only
+    # (see docs/superpowers/SECURITY.md):
+    # - Default: --allowedTools scopes tools
+    # - SKILLOPT_UNSAFE=1: blanket bypass
     if os.environ.get("SKILLOPT_UNSAFE") == "1":
         import warnings
         warnings.warn(
@@ -606,8 +587,6 @@ def _run_scenario(
         cmd.append("--dangerously-skip-permissions")
     else:
         cmd.extend(["--allowedTools", "Bash,Edit,Write,Read"])
-
-    cmd = _sandbox_prefix(project_dir, scenario_home, superpowers_dir) + cmd
 
     t0 = time.time()
     try:
@@ -633,7 +612,8 @@ def _run_scenario(
         result.latency_ms = timeout * 1000
         return result
     except FileNotFoundError:
-        result.error = "CLAUDE_NOT_FOUND"
+        # name the missing binary rather than always blaming claude
+        result.error = f"EXEC_NOT_FOUND:{cmd[0]}"
         return result
     except Exception as e:
         result.error = str(e)
@@ -645,6 +625,7 @@ def _run_scenario(
     # Harness-owned evidence, collected after the agent has exited
     result.evidence = {
         "pytest_runs": _pytest_run_count(audit_log, run_nonce),
+        "pytest_after_edit": _pytest_after_edit(audit_log, project_dir),
         "bootstrap_loaded": marker in result.output,
         "bootstrap_present": bootstrap_present,
         "candidate_hash": candidate_hash,
@@ -654,7 +635,7 @@ def _run_scenario(
         for c in scenario.get("judge", {}).get("checks", [])
     ):
         result.evidence["harness_test_passes"] = _harness_verify(
-            project_dir, scenario_home, superpowers_dir, env, timeout
+            project_dir, env, timeout
         )
 
     checks = list(scenario.get("judge", {}).get("checks", []))
@@ -674,26 +655,19 @@ def _run_scenario(
 
 
 def _harness_verify(
-    project_dir: Path, home: Path, plugin_dir: Path, env: Dict[str, str],
-    timeout: int = DEFAULT_TIMEOUT,
+    project_dir: Path, env: Dict[str, str], timeout: int = DEFAULT_TIMEOUT,
 ) -> bool:
     """Re-run the project's tests ourselves - agent output cannot fake this.
 
-    SECURITY: this executes (agent-modified) project code. When SKILLOPT_SANDBOX
-    is set the re-run goes through the same sandbox as the agent, so untrusted
-    code is not executed on the host. Without a sandbox (trusted-candidate mode)
-    it runs on the host, same as the agent did.
+    SECURITY: this executes agent-modified project code on the host, same as the
+    agent did. Trusted candidates only (see docs/superpowers/SECURITY.md). The
+    credential is dropped so it never reaches that code.
     """
-    mode = os.environ.get("SKILLOPT_SANDBOX", "")
-    prefix = _sandbox_prefix(project_dir, home, plugin_dir)
-    # in a container the host interpreter path won't exist; resolve in-image
-    interp = "python3" if mode == "docker" else sys.executable
-    verify_env = {**env, "SKILLOPT_ATTEMPT": "99"}
-    if not mode:
-        verify_env["PATH"] = os.environ.get("PATH", "")
+    verify_env = {**env, "SKILLOPT_ATTEMPT": "99", "PATH": os.environ.get("PATH", "")}
+    verify_env.pop("ANTHROPIC_API_KEY", None)
     try:
         proc = subprocess.run(
-            prefix + [interp, "-m", "pytest", "-q"],
+            [sys.executable, "-m", "pytest", "-q"],
             cwd=str(project_dir), capture_output=True, text=True, timeout=timeout,
             env=verify_env,
         )
@@ -734,6 +708,11 @@ class SuperpowersEvaluator:
         Raises:
             FileNotFoundError: if candidate_skill_path is provided but doesn't exist
         """
+        if not re.fullmatch(r"[0-9a-f]{40}", pinned_sha):
+            raise ValueError(
+                f"pinned_sha must be a full 40-char commit hash, got {pinned_sha!r}"
+            )
+
         results = EvalResults(skill=self.skill, version=self.version, pinned_sha=pinned_sha)
         scenarios = _get_scenarios(self.skill)
 
