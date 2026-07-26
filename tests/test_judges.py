@@ -1,0 +1,117 @@
+"""Tests for skillopt_sleep.judges — the rule judge that decides every night.
+
+Focus: a malformed check must never be indistinguishable from an unmet one.
+A regex that does not compile returns False on every rollout, so the affected
+dimension scores 0.0 forever while the run still looks healthy.
+"""
+import unittest
+
+from skillopt_sleep.judges import KNOWN_OPS, score_rule_judge, validate_checks
+
+
+class TestCheckOperators(unittest.TestCase):
+    def _score(self, op, arg, response, tools=None):
+        return score_rule_judge({"kind": "rule", "checks": [{"op": op, "arg": arg}]},
+                                response, tools or [])
+
+    def test_contains_is_case_insensitive(self) -> None:
+        self.assertEqual(self._score("contains", "Key Risks", "the KEY RISKS section")[0], 1.0)
+
+    def test_regex_matches(self) -> None:
+        self.assertEqual(self._score("regex", r"\d+\.\d+", "see 7.4 for details")[0], 1.0)
+
+    def test_min_and_max_chars(self) -> None:
+        self.assertEqual(self._score("min_chars", 5, "abcdef")[0], 1.0)
+        self.assertEqual(self._score("min_chars", 50, "abcdef")[0], 0.0)
+        self.assertEqual(self._score("max_chars", 5, "abcdef")[0], 0.0)
+
+    def test_section_present_accepts_heading_and_bold_and_label(self) -> None:
+        for text in ("## Key Risks", "**Key Risks:**", "Key Risks: something"):
+            self.assertEqual(self._score("section_present", "Key Risks", text)[0], 1.0, text)
+
+    def test_tool_called_via_marker(self) -> None:
+        self.assertEqual(self._score("tool_called", "search", "TOOL_CALL: search")[0], 1.0)
+        self.assertEqual(self._score("tool_called", "search", "nope", ["search"])[0], 1.0)
+
+    def test_unknown_op_does_not_block(self) -> None:
+        self.assertEqual(self._score("no_such_op", "x", "anything")[0], 1.0)
+
+
+class TestSoftAndHardScoring(unittest.TestCase):
+    def test_soft_is_fraction_and_hard_is_all_or_nothing(self) -> None:
+        judge = {"kind": "rule", "checks": [
+            {"op": "contains", "arg": "alpha"},
+            {"op": "contains", "arg": "beta"},
+            {"op": "contains", "arg": "gamma"},
+        ]}
+        hard, soft, why = score_rule_judge(judge, "alpha and beta only")
+        self.assertEqual(hard, 0.0)
+        self.assertAlmostEqual(soft, 2 / 3)
+        self.assertIn("gamma", why)
+
+    def test_empty_checks_score_zero(self) -> None:
+        self.assertEqual(score_rule_judge({"kind": "rule", "checks": []}, "x")[:2], (0.0, 0.0))
+
+
+class TestMalformedRegexIsDistinguishable(unittest.TestCase):
+    """A pattern Python cannot parse must not read like a plain miss."""
+
+    BAD = r"(?i)foo|(?i)bar"  # inline flag not at the start -> re.error
+
+    def test_bad_pattern_still_fails_closed(self) -> None:
+        # the response does contain both alternatives; the pattern is the problem
+        hard, soft, _why = score_rule_judge(
+            {"kind": "rule", "checks": [{"op": "regex", "arg": self.BAD}]}, "foo bar")
+        self.assertEqual(hard, 0.0)
+        self.assertEqual(soft, 0.0)
+
+    def test_rationale_names_the_pattern_as_invalid(self) -> None:
+        _hard, _soft, why = score_rule_judge(
+            {"kind": "rule", "checks": [{"op": "regex", "arg": self.BAD}]}, "foo bar")
+        self.assertIn("invalid regex", why)
+
+    def test_a_genuine_miss_is_not_labelled_invalid(self) -> None:
+        _hard, _soft, why = score_rule_judge(
+            {"kind": "rule", "checks": [{"op": "regex", "arg": r"zzz"}]}, "foo bar")
+        self.assertNotIn("invalid regex", why)
+
+
+class TestValidateChecks(unittest.TestCase):
+    def test_sound_checks_produce_nothing(self) -> None:
+        errors, warnings = validate_checks({"checks": [
+            {"op": "regex", "arg": r"^\s*SKILL:"},
+            {"op": "min_chars", "arg": 10},
+            {"op": "section_present", "arg": "Risks"},
+        ]})
+        self.assertEqual(errors, [])
+        self.assertEqual(warnings, [])
+
+    def test_uncompilable_regex_is_an_error(self) -> None:
+        errors, _warnings = validate_checks({"checks": [{"op": "regex", "arg": r"(?i)a|(?i)b"}]})
+        self.assertEqual(len(errors), 1)
+        self.assertIn("does not compile", errors[0])
+
+    def test_non_integer_char_bound_is_an_error(self) -> None:
+        errors, _warnings = validate_checks({"checks": [{"op": "max_chars", "arg": "many"}]})
+        self.assertEqual(len(errors), 1)
+        self.assertIn("integer", errors[0])
+
+    def test_unknown_op_is_only_a_warning(self) -> None:
+        errors, warnings = validate_checks({"checks": [{"op": "vibes", "arg": 1}]})
+        self.assertEqual(errors, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("always passes", warnings[0])
+
+    def test_non_object_check_is_an_error(self) -> None:
+        errors, _warnings = validate_checks({"checks": ["not-an-object"]})
+        self.assertEqual(len(errors), 1)
+
+    def test_every_known_op_is_accepted(self) -> None:
+        for op in KNOWN_OPS:
+            arg = 1 if op.endswith("_chars") else "x"
+            errors, warnings = validate_checks({"checks": [{"op": op, "arg": arg}]})
+            self.assertEqual((errors, warnings), ([], []), op)
+
+
+if __name__ == "__main__":
+    unittest.main()

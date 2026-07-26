@@ -35,29 +35,76 @@ def _section_present(response: str, name: str) -> bool:
     return bool(label.search(response or ""))
 
 
-def _check(op: str, arg: Any, response: str, tools_called: List[str]) -> bool:
+def _check(op: str, arg: Any, response: str,
+           tools_called: List[str]) -> Tuple[bool, str]:
+    """Evaluate one check.
+
+    Returns ``(passed, problem)``. ``problem`` is non-empty only when the check
+    itself is malformed (e.g. an unparseable regex) rather than simply unmet —
+    the two need opposite fixes, so they must not look alike in the rationale.
+    """
     r = response or ""
     if op == "section_present":
-        return _section_present(r, str(arg))
+        return _section_present(r, str(arg)), ""
     if op == "regex":
         try:
-            return bool(re.search(str(arg), r))
-        except re.error:
-            return False
+            return bool(re.search(str(arg), r)), ""
+        except re.error as exc:
+            # A malformed pattern can never match, so it would fail every
+            # rollout forever and read exactly like a model that never
+            # complies. Surface it instead of hiding it behind a False.
+            return False, f"invalid regex ({exc})"
     if op == "max_chars":
-        return len(r) <= int(arg)
+        return len(r) <= int(arg), ""
     if op == "min_chars":
-        return len(r) >= int(arg)
+        return len(r) >= int(arg), ""
     if op == "contains":
-        return str(arg).lower() in r.lower()
+        return str(arg).lower() in r.lower(), ""
     if op == "tool_called":
         name = str(arg).lower()
         if any(name == t.lower() for t in tools_called):
-            return True
+            return True, ""
         # single-shot approximation: the agent emits an explicit marker
-        return bool(re.search(r"(?i)\btool_call\s*:\s*%s\b" % re.escape(name), r))
+        return bool(re.search(r"(?i)\btool_call\s*:\s*%s\b" % re.escape(name), r)), ""
     # unknown op: do not block
-    return True
+    return True, ""
+
+
+KNOWN_OPS = frozenset({
+    "section_present", "regex", "max_chars", "min_chars", "contains", "tool_called",
+})
+
+
+def validate_checks(judge: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """Return ``(errors, warnings)`` for a rule judge's checks.
+
+    An *error* means the check can never behave as written — a regex that does
+    not compile always scores 0.0, which is indistinguishable from a model that
+    never complies. A *warning* means the check is accepted but toothless, e.g.
+    an unknown op, which :func:`_check` deliberately lets pass.
+    """
+    errors: List[str] = []
+    warnings: List[str] = []
+    checks = (judge or {}).get("checks", []) or []
+    for i, c in enumerate(checks):
+        if not isinstance(c, dict):
+            errors.append(f"check #{i} is not an object")
+            continue
+        op = c.get("op", "")
+        arg = c.get("arg")
+        if op == "regex":
+            try:
+                re.compile(str(arg))
+            except re.error as exc:
+                errors.append(f"check #{i} regex does not compile ({exc}): {arg!r}")
+        elif op in {"max_chars", "min_chars"}:
+            try:
+                int(arg)
+            except (TypeError, ValueError):
+                errors.append(f"check #{i} {op} needs an integer arg, got {arg!r}")
+        elif op not in KNOWN_OPS:
+            warnings.append(f"check #{i} has unknown op {op!r} — it always passes")
+    return errors, warnings
 
 
 def score_rule_judge(
@@ -73,11 +120,14 @@ def score_rule_judge(
     passed = 0
     failed_desc: List[str] = []
     for c in checks:
-        ok = _check(c.get("op", ""), c.get("arg"), response, tools_called)
+        ok, problem = _check(c.get("op", ""), c.get("arg"), response, tools_called)
         if ok:
             passed += 1
         else:
-            failed_desc.append(f"{c.get('op')}={c.get('arg')}")
+            desc = f"{c.get('op')}={c.get('arg')}"
+            if problem:
+                desc += f" [{problem}]"
+            failed_desc.append(desc)
     soft = passed / len(checks)
     hard = 1.0 if passed == len(checks) else 0.0
     rationale = "all checks passed" if hard else "failed: " + ", ".join(failed_desc)
