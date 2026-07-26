@@ -12,9 +12,11 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 
 from skillopt.model import chat_target_messages
 from skillopt.prompts import load_prompt
+from skillopt.envs.spreadsheetbench.executor import generated_code_env
 
 # ── Tool schemas ─────────────────────────────────────────────────────────────
 
@@ -23,13 +25,13 @@ BASH_TOOL_CHAT = {
     "function": {
         "name": "bash",
         "description": (
-            "Execute a bash command and receive stdout+stderr (truncated to 4000 chars). "
-            "Use Python to read / write Excel files."
+            "Run a Python command (python/python3 only) and receive stdout+stderr "
+            "(truncated to 4000 chars)."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "cmd": {"type": "string", "description": "Bash command to execute."}
+                "cmd": {"type": "string", "description": "Python command to execute."}
             },
             "required": ["cmd"],
         },
@@ -40,13 +42,13 @@ BASH_TOOL_RESPONSES = {
     "type": "function",
     "name": "bash",
     "description": (
-        "Execute a bash command and receive stdout+stderr (truncated to 4000 chars). "
-        "Use Python to read / write Excel files."
+        "Run a Python command (python/python3 only) and receive stdout+stderr "
+        "(truncated to 4000 chars)."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "cmd": {"type": "string", "description": "Bash command to execute."}
+            "cmd": {"type": "string", "description": "Python command to execute."}
         },
         "required": ["cmd"],
     },
@@ -279,14 +281,18 @@ def _run_bash(cmd: str, work_dir: str, timeout: int = 60) -> str:
                 "use Python to manipulate spreadsheets]"
             )
         parts[0] = sys.executable
-        proc = subprocess.run(
-            parts,
-            shell=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=work_dir,
-        )
+        with tempfile.TemporaryDirectory(
+            prefix="skillopt-generated-", ignore_cleanup_errors=True
+        ) as temp_dir:
+            proc = subprocess.run(
+                parts,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=work_dir,
+                env=generated_code_env(work_dir, temp_dir),
+            )
         out = (proc.stdout + proc.stderr).strip()
     except subprocess.TimeoutExpired:
         return f"[timeout after {timeout}s]"
