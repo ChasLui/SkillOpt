@@ -11,6 +11,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 
 from skillopt.model import chat_target_messages
 from skillopt.prompts import load_prompt
@@ -249,25 +250,35 @@ def _auto_verify(work_dir: str) -> str:
         return f"\n\n[AUTO-VERIFY] Could not inspect output: {e}"
 
 
-# Commands that the ReAct agent is allowed to run (benchmark only needs Python).
-_CMD_ALLOW = {"python", "python3"}
+# Command aliases that the ReAct agent may request. Every accepted alias is
+# resolved to this process's interpreter before execution, so behavior does not
+# depend on PATH and similarly named executables cannot bypass the allow-list.
+_PYTHON_ALIASES = {"python", "python3", "python.exe", "python3.exe"}
 
 
 # ── Bash execution ────────────────────────────────────────────────────────────
 
 def _run_bash(cmd: str, work_dir: str, timeout: int = 60) -> str:
     try:
-        parts = shlex.split(cmd)
+        parts = shlex.split(cmd, posix=os.name != "nt")
+        if os.name == "nt":
+            # shlex in non-POSIX mode retains surrounding quotes.
+            parts = [
+                part[1:-1]
+                if len(part) >= 2 and part[0] == part[-1] and part[0] in {'"', "'"}
+                else part
+                for part in parts
+            ]
         if not parts:
             return "[error: empty command]"
-        exe_name = os.path.basename(parts[0]).lower()
-        # Strip .exe suffix on Windows (python.exe → python)
-        exe_stem = exe_name.split(".")[0]
-        if exe_stem not in _CMD_ALLOW:
+        exe_name = parts[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if exe_name not in _PYTHON_ALIASES:
             return (
-                f"[blocked: '{parts[0]}' not in allow-list {sorted(_CMD_ALLOW)}; "
+                f"[blocked: '{parts[0]}' not in allow-list "
+                f"{sorted(_PYTHON_ALIASES)}; "
                 "use Python to manipulate spreadsheets]"
             )
+        parts[0] = sys.executable
         proc = subprocess.run(
             parts,
             shell=False,

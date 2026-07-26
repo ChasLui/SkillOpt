@@ -117,6 +117,9 @@ def apply_edits_detailed(
             applied.append(e)
         elif op == "delete":
             anchor = _norm(e.anchor or e.content)
+            if not anchor:
+                unmatched.append(e)
+                continue
             keep = [line for line in lines if anchor not in _norm(line)]
             if len(keep) != len(lines):
                 lines = keep

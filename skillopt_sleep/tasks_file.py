@@ -86,7 +86,7 @@ def load_tasks_file(
     # complies — the run looks legitimate while one dimension is dead.
     errors: List[str] = []
     for task in tasks:
-        if task.reference_kind != "rule" or not task.judge:
+        if task.reference_kind != "rule":
             continue
         task_errors, task_warnings = validate_checks(task.judge)
         errors.extend(f"task {task.id}: {e}" for e in task_errors)

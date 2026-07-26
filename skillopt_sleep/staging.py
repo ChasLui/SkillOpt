@@ -33,8 +33,20 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
      "[REDACTED_JWT]"),
     (re.compile(r"(?i)(Authorization:\s*Bearer\s+)[^\s\"']+"), r"\1[REDACTED]"),
     (re.compile(r"(?i)(Authorization:\s*Basic\s+)[^\s\"']+"), r"\1[REDACTED]"),
+    # Connection-string passwords. Handle quoted values (which may contain
+    # semicolons) before the generic name=value rule below, and retain the key
+    # plus all non-secret connection-string fields for useful diagnostics.
     (
-        re.compile(r"(?i)\b(api[_-]?key|token|password|secret)\b(\s*[:=]\s*)[^\s\"']+"),
+        re.compile(
+            r'''(?i)(\bPassword\s*=\s*)(?:"[^"]+"|'[^']+'|[^;"'\s&]+)'''
+        ),
+        r"\1[REDACTED_DB_PASS]",
+    ),
+    (
+        re.compile(
+            r"(?i)\b(api[_-]?key|token|password|secret)\b"
+            r"(\s*[:=]\s*)(?!\[REDACTED(?:_[A-Z_]+)?\])[^\s\"';&]+"
+        ),
         r"\1\2[REDACTED]",
     ),
     (
@@ -52,8 +64,6 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(?i)\bsig=[A-Za-z0-9%+/]{10,}"), "[REDACTED_SAS_SIG]"),
     # Azure Storage account keys (base64, typically 88 chars)
     (re.compile(r"(?i)AccountKey=[A-Za-z0-9+/=]{20,}"), "[REDACTED_STORAGE_KEY]"),
-    # Connection-string passwords (Password=...; up to semicolon/quote/whitespace)
-    (re.compile(r"(?i)\bPassword=[^;\"'\s]{6,}"), "[REDACTED_DB_PASS]"),
 )
 
 

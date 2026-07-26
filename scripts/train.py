@@ -386,17 +386,35 @@ def load_config(args: argparse.Namespace) -> dict:
     import warnings
     from skillopt.config import load_config as _load, flatten_config, is_structured
 
-    # F08: Warn when API keys are supplied on the CLI — prefer env vars or managed identity.
-    for _cli_key in (
-        "azure_api_key", "azure_openai_api_key",
-        "optimizer_azure_openai_api_key", "target_azure_openai_api_key",
-        "minimax_api_key",
-    ):
+    # F08: Warn when API keys are supplied on the CLI. Keep the replacement
+    # guidance specific to each backend and, where applicable, each role.
+    _credential_guidance = {
+        "azure_api_key": (
+            "AZURE_OPENAI_API_KEY or "
+            "--azure_openai_auth_mode=managed_identity"
+        ),
+        "azure_openai_api_key": (
+            "AZURE_OPENAI_API_KEY or "
+            "--azure_openai_auth_mode=managed_identity"
+        ),
+        "optimizer_azure_openai_api_key": (
+            "OPTIMIZER_AZURE_OPENAI_API_KEY or "
+            "--optimizer_azure_openai_auth_mode=managed_identity"
+        ),
+        "target_azure_openai_api_key": (
+            "TARGET_AZURE_OPENAI_API_KEY or "
+            "--target_azure_openai_auth_mode=managed_identity"
+        ),
+        "qwen_chat_api_key": "QWEN_CHAT_API_KEY",
+        "optimizer_qwen_chat_api_key": "OPTIMIZER_QWEN_CHAT_API_KEY",
+        "target_qwen_chat_api_key": "TARGET_QWEN_CHAT_API_KEY",
+        "minimax_api_key": "MINIMAX_API_KEY",
+    }
+    for _cli_key, _guidance in _credential_guidance.items():
         if getattr(args, _cli_key, None):
             warnings.warn(
-                f"--{_cli_key} is deprecated: provide credentials via the "
-                f"AZURE_OPENAI_API_KEY environment variable or set "
-                f"--azure_openai_auth_mode=managed_identity instead.",
+                f"--{_cli_key} is deprecated: provide credentials via "
+                f"{_guidance} instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )

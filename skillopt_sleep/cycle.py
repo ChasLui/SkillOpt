@@ -32,10 +32,26 @@ from skillopt_sleep.types import SessionDigest, SleepReport, TaskRecord
 
 # ── Model-swap detection (F16) ───────────────────────────────
 def _make_model_key(cfg: SleepConfig) -> str:
-    """Stable string identifying the backend+model combination for this cycle."""
-    return "{}::{}".format(
-        cfg.get("backend", "mock"),
-        cfg.get("model", ""),
+    """Stable string identifying the effective backend/model role(s)."""
+    backend = str(cfg.get("backend", "mock") or "mock")
+    model = str(cfg.get("model", "") or "")
+    split_keys = (
+        "optimizer_backend",
+        "optimizer_model",
+        "target_backend",
+        "target_model",
+    )
+    if not any(cfg.get(key, "") for key in split_keys):
+        # Preserve the original state format for ordinary single-backend runs.
+        return f"{backend}::{model}"
+
+    optimizer_backend = str(cfg.get("optimizer_backend", "") or backend)
+    optimizer_model = str(cfg.get("optimizer_model", "") or model)
+    target_backend = str(cfg.get("target_backend", "") or backend)
+    target_model = str(cfg.get("target_model", "") or model)
+    return (
+        f"optimizer={optimizer_backend}::{optimizer_model};"
+        f"target={target_backend}::{target_model}"
     )
 
 

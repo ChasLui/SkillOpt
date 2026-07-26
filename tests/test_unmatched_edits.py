@@ -29,6 +29,13 @@ class TestUnmatchedEdits(unittest.TestCase):
         _new, applied, unmatched = apply_edits_detailed(doc, [e])
         self.assertEqual((applied, unmatched), ([], [e]))
 
+    def test_delete_with_empty_anchor_is_unmatched_and_preserves_all_lines(self) -> None:
+        doc = _doc("keep one", "keep two")
+        e = EditRecord(target="skill", op="delete", content="", anchor="")
+        new_doc, applied, unmatched = apply_edits_detailed(doc, [e])
+        self.assertEqual((applied, unmatched), ([], [e]))
+        self.assertEqual(new_doc, doc)
+
     def test_duplicate_add_is_unmatched_not_applied(self) -> None:
         doc = _doc("existing rule")
         e = EditRecord(target="skill", op="add", content="Existing   Rule")
