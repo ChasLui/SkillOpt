@@ -75,7 +75,7 @@ KNOWN_OPS = frozenset({
 })
 
 
-def validate_checks(judge: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+def validate_checks(judge: Any) -> Tuple[List[str], List[str]]:
     """Return ``(errors, warnings)`` for a rule judge's checks.
 
     An *error* means the check can never behave as written — a regex that does
@@ -85,7 +85,7 @@ def validate_checks(judge: Dict[str, Any]) -> Tuple[List[str], List[str]]:
     """
     errors: List[str] = []
     warnings: List[str] = []
-    if judge and not isinstance(judge, dict):
+    if judge is not None and not isinstance(judge, dict):
         return [f"judge must be an object, got {type(judge).__name__}"], warnings
     checks = (judge or {}).get("checks", []) or []
     if not isinstance(checks, list):

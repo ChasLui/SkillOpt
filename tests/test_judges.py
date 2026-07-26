@@ -4,9 +4,13 @@ Focus: a malformed check must never be indistinguishable from an unmet one.
 A regex that does not compile returns False on every rollout, so the affected
 dimension scores 0.0 forever while the run still looks healthy.
 """
+import json
 import unittest
 
+import pytest
+
 from skillopt_sleep.judges import KNOWN_OPS, score_rule_judge, validate_checks
+from skillopt_sleep.tasks_file import load_tasks_file
 
 
 class TestCheckOperators(unittest.TestCase):
@@ -56,7 +60,7 @@ class TestSoftAndHardScoring(unittest.TestCase):
 class TestMalformedRegexIsDistinguishable(unittest.TestCase):
     """A pattern Python cannot parse must not read like a plain miss."""
 
-    BAD = r"(?i)foo|(?i)bar"  # inline flag not at the start -> re.error
+    BAD = r"foo("  # unclosed group is invalid on every supported Python version
 
     def test_bad_pattern_still_fails_closed(self) -> None:
         # the response does contain both alternatives; the pattern is the problem
@@ -87,7 +91,7 @@ class TestValidateChecks(unittest.TestCase):
         self.assertEqual(warnings, [])
 
     def test_uncompilable_regex_is_an_error(self) -> None:
-        errors, _warnings = validate_checks({"checks": [{"op": "regex", "arg": r"(?i)a|(?i)b"}]})
+        errors, _warnings = validate_checks({"checks": [{"op": "regex", "arg": r"foo("}]})
         self.assertEqual(len(errors), 1)
         self.assertIn("does not compile", errors[0])
 
@@ -108,7 +112,7 @@ class TestValidateChecks(unittest.TestCase):
 
     def test_malformed_judge_is_reported_not_raised(self) -> None:
         # a tasks file may carry any JSON here; validation must stay structured
-        for bad in (["not", "a", "dict"], "a string", 42):
+        for bad in (["not", "a", "dict"], [], "a string", "", 42, 0):
             errors, _warnings = validate_checks(bad)
             self.assertEqual(len(errors), 1, bad)
             self.assertIn("must be an object", errors[0])
@@ -127,6 +131,32 @@ class TestValidateChecks(unittest.TestCase):
             arg = 1 if op.endswith("_chars") else "x"
             errors, warnings = validate_checks({"checks": [{"op": op, "arg": arg}]})
             self.assertEqual((errors, warnings), ([], []), op)
+
+
+@pytest.mark.parametrize("bad_judge", [[], "", 0])
+def test_tasks_file_rejects_falsy_non_object_judges(
+    tmp_path, bad_judge
+) -> None:
+    path = tmp_path / "tasks.json"
+    path.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "malformed-rule",
+                        "project": "test",
+                        "intent": "test",
+                        "reference_kind": "rule",
+                        "judge": bad_judge,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="judge must be an object"):
+        load_tasks_file(str(path))
 
 
 if __name__ == "__main__":
