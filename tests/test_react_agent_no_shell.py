@@ -16,11 +16,17 @@ def test_disallowed_command_is_blocked(tmp_path) -> None:
     assert "blocked" in out.lower()
 
 
-def test_allowed_python_runs(tmp_path) -> None:
-    # Bare 'python' resolves via PATH; a full Windows path would be mangled by
-    # shlex.split (posix mode), which is expected agent-input behaviour here.
+def test_allowed_python_runs_without_path_lookup(tmp_path, monkeypatch) -> None:
+    # Accepted aliases are mapped to the running interpreter, so an absent PATH
+    # must not make the benchmark depend on a system-level Python command.
+    monkeypatch.setenv("PATH", "")
     out = _run_bash('python -c "print(42)"', str(tmp_path))
     assert "42" in out
+
+
+def test_similarly_named_executable_is_blocked(tmp_path) -> None:
+    out = _run_bash('python.evil -c "print(42)"', str(tmp_path))
+    assert "blocked" in out.lower()
 
 
 def test_shell_metacharacters_not_interpreted(tmp_path) -> None:
