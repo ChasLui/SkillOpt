@@ -96,6 +96,16 @@ def validate_checks(judge: Any) -> Tuple[List[str], List[str]]:
             continue
         op = c.get("op", "")
         arg = c.get("arg")
+        if not isinstance(op, str):
+            errors.append(
+                f"check #{i} op must be a string, got {type(op).__name__}"
+            )
+            continue
+        if op in {"regex", "section_present", "contains", "tool_called"} and (
+            arg is None or not str(arg).strip()
+        ):
+            errors.append(f"check #{i} {op} needs a non-empty arg")
+            continue
         if op == "regex":
             try:
                 re.compile(str(arg))
@@ -103,9 +113,27 @@ def validate_checks(judge: Any) -> Tuple[List[str], List[str]]:
                 errors.append(f"check #{i} regex does not compile ({exc}): {arg!r}")
         elif op in {"max_chars", "min_chars"}:
             try:
-                int(arg)
-            except (TypeError, ValueError):
+                if isinstance(arg, bool):
+                    raise ValueError
+                if isinstance(arg, int):
+                    bound = arg
+                elif isinstance(arg, float):
+                    if not arg.is_integer():
+                        raise ValueError
+                    bound = int(arg)
+                elif isinstance(arg, str) and re.fullmatch(
+                    r"[+-]?\d+", arg.strip()
+                ):
+                    bound = int(arg.strip())
+                else:
+                    raise ValueError
+            except (OverflowError, TypeError, ValueError):
                 errors.append(f"check #{i} {op} needs an integer arg, got {arg!r}")
+            else:
+                if bound < 0:
+                    errors.append(f"check #{i} {op} cannot be negative, got {bound}")
+                elif op == "min_chars" and bound == 0:
+                    warnings.append(f"check #{i} min_chars=0 always passes")
         elif op not in KNOWN_OPS:
             warnings.append(f"check #{i} has unknown op {op!r} — it always passes")
     return errors, warnings

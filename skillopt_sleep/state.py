@@ -30,6 +30,7 @@ DEFAULT_STATE: Dict[str, Any] = {
     "history": [],          # list of per-night summaries
     "task_archive": [],     # capped list of past mined tasks (for associative recall)
     "last_model_key": "",   # "backend::model" string used in the last successful night (F16)
+    "last_model_key_format": 1,  # v1=config text; v2=resolved backend/model
 }
 
 
@@ -103,3 +104,11 @@ class SleepState:
 
     def set_last_model_key(self, key: str) -> None:
         self.data["last_model_key"] = key
+        self.data["last_model_key_format"] = 2
+
+    @property
+    def last_model_key_format(self) -> int:
+        try:
+            return int(self.data.get("last_model_key_format", 1))
+        except (TypeError, ValueError):
+            return 1

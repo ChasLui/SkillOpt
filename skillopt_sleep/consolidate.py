@@ -295,6 +295,15 @@ def consolidate(
         # `accepted` is False makes the headline contradict the outcome.
         if not accepted and action in {"accept", "accept_new_best"}:
             action = "reject"
+        # A per-target trial can improve and tentatively apply an edit, while a
+        # later fresh final replay regresses. The returned documents already
+        # roll back in that case; keep the edit bookkeeping/report consistent
+        # by moving those tentative edits into the rejected set as well.
+        if not accepted and all_applied:
+            for edit in all_applied:
+                if edit not in all_rejected:
+                    all_rejected.append(edit)
+            all_applied = []
 
     if ev is not None:
         w = max(0.0, min(1.0, float(gate_mixed_weight)))

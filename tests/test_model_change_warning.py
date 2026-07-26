@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import warnings
 
 from skillopt_sleep.cycle import _check_model_change, _make_model_key
@@ -19,6 +20,7 @@ def test_last_model_key_roundtrips(tmp_path) -> None:
     state = SleepState.load(path)
     assert state.last_model_key == ""
     state.set_last_model_key("anthropic::claude")
+    assert state.last_model_key_format == 2
     state.save()
     assert SleepState.load(path).last_model_key == "anthropic::claude"
 
@@ -66,8 +68,50 @@ def test_model_key_tracks_effective_optimizer_and_target_roles() -> None:
         optimizer_backend="claude",
     )
     assert _make_model_key(inherited) == (
-        "optimizer=claude::shared;target=mock::shared"
+        "optimizer=claude::shared;target=mock::"
     )
+
+
+def test_model_key_normalizes_aliases_and_tracks_environment_defaults(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("SKILLOPT_SLEEP_CLAUDE_MODEL", raising=False)
+    claude = _make_model_key(load_config(backend="claude", model=""))
+    anthropic = _make_model_key(load_config(backend="anthropic", model=""))
+    assert claude == anthropic == "claude::sonnet"
+
+    monkeypatch.setenv("SKILLOPT_SLEEP_CLAUDE_MODEL", "opus")
+    assert _make_model_key(load_config(backend="claude", model="")) == "claude::opus"
+
+
+def test_model_key_resolution_failure_uses_safe_config_fallback(monkeypatch) -> None:
+    cycle_module = importlib.import_module("skillopt_sleep.cycle")
+
+    def fail_to_build(**_kwargs):
+        raise RuntimeError("diagnostic construction failed")
+
+    monkeypatch.setattr(cycle_module, "build_backend", fail_to_build)
+    cfg = load_config(
+        backend="claude",
+        model="sonnet",
+        optimizer_backend="codex",
+        optimizer_model="gpt",
+    )
+    assert cycle_module._make_model_key(cfg) == (
+        "configured:optimizer=codex::gpt;target=claude::sonnet"
+    )
+
+
+def test_legacy_unresolved_model_key_migrates_without_false_warning(
+    tmp_path, capsys
+) -> None:
+    state = SleepState.load(str(tmp_path / "state.json"))
+    state.data["last_model_key"] = "claude::"
+    state.data["last_model_key_format"] = 1
+
+    _check_model_change(load_config(backend="claude", model=""), state)
+
+    assert "model changed" not in capsys.readouterr().err
 
 
 def test_warns_when_one_split_backend_role_changes(tmp_path, capsys) -> None:
@@ -141,3 +185,53 @@ def test_cli_key_warnings_name_the_correct_environment_variable() -> None:
             if issubclass(w.category, DeprecationWarning)
         ]
         assert any(environment_variable in message for message in messages), flag
+
+
+def test_cfg_options_api_key_emits_safe_deprecation_warning() -> None:
+    from scripts.train import load_config as train_load_config
+
+    args = argparse.Namespace(
+        config="configs/_base_/default.yaml",
+        cfg_options=["model.azure_openai_api_key=do-not-print-this-secret"],
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            train_load_config(args)
+        except Exception:
+            pass
+    messages = [
+        str(w.message)
+        for w in caught
+        if issubclass(w.category, DeprecationWarning)
+    ]
+    assert any("AZURE_OPENAI_API_KEY" in message for message in messages)
+    assert all("do-not-print-this-secret" not in message for message in messages)
+
+
+def test_cfg_options_warning_uses_leaf_name_and_catches_future_secrets() -> None:
+    from scripts.train import load_config as train_load_config
+
+    args = argparse.Namespace(
+        config="configs/_base_/default.yaml",
+        cfg_options=[
+            "custom.optimizer_qwen_chat_api_key=role-secret",
+            "future.backend.access_token=future-secret",
+        ],
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            train_load_config(args)
+        except Exception:
+            pass
+    messages = [
+        str(w.message)
+        for w in caught
+        if issubclass(w.category, DeprecationWarning)
+    ]
+
+    assert any("OPTIMIZER_QWEN_CHAT_API_KEY" in message for message in messages)
+    assert any("future.backend.access_token" in message for message in messages)
+    assert all("role-secret" not in message for message in messages)
+    assert all("future-secret" not in message for message in messages)

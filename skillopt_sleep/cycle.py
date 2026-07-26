@@ -32,38 +32,80 @@ from skillopt_sleep.types import SessionDigest, SleepReport, TaskRecord
 
 # ── Model-swap detection (F16) ───────────────────────────────
 def _make_model_key(cfg: SleepConfig) -> str:
-    """Stable string identifying the effective backend/model role(s)."""
-    backend = str(cfg.get("backend", "mock") or "mock")
-    model = str(cfg.get("model", "") or "")
-    split_keys = (
-        "optimizer_backend",
-        "optimizer_model",
-        "target_backend",
-        "target_model",
-    )
-    if not any(cfg.get(key, "") for key in split_keys):
-        # Preserve the original state format for ordinary single-backend runs.
-        return f"{backend}::{model}"
+    """Stable string identifying the backend object(s) actually used.
 
-    optimizer_backend = str(cfg.get("optimizer_backend", "") or backend)
-    optimizer_model = str(cfg.get("optimizer_model", "") or model)
-    target_backend = str(cfg.get("target_backend", "") or backend)
-    target_model = str(cfg.get("target_model", "") or model)
-    return (
-        f"optimizer={optimizer_backend}::{optimizer_model};"
-        f"target={target_backend}::{target_model}"
-    )
+    Model-change detection is advisory, so resolving its diagnostic key must
+    never become an earlier failure point than construction of the real
+    backend. Fall back to a credential-free description of the configured
+    roles if a backend constructor cannot be used in this diagnostic path.
+    """
+    try:
+        effective = build_backend(
+            backend=cfg.get("backend", "mock"),
+            model=cfg.get("model", ""),
+            optimizer_backend=cfg.get("optimizer_backend", ""),
+            optimizer_model=cfg.get("optimizer_model", ""),
+            target_backend=cfg.get("target_backend", ""),
+            target_model=cfg.get("target_model", ""),
+            codex_path=cfg.get("codex_path", ""),
+            cursor_path=cfg.get("cursor_path", ""),
+            azure_endpoint=cfg.get("azure_endpoint", ""),
+            project_dir=cfg.get("invoked_project", "") or os.getcwd(),
+        )
+    except Exception:
+        backend = str(cfg.get("backend", "mock") or "mock")
+        model = str(cfg.get("model", "") or "")
+        split_keys = (
+            "optimizer_backend",
+            "optimizer_model",
+            "target_backend",
+            "target_model",
+        )
+        if not any(cfg.get(key, "") for key in split_keys):
+            return f"configured:{backend}::{model}"
+        optimizer_backend = str(cfg.get("optimizer_backend", "") or backend)
+        optimizer_model = str(cfg.get("optimizer_model", "") or model)
+        target_backend = str(cfg.get("target_backend", "") or backend)
+        target_model = str(cfg.get("target_model", "") or model)
+        return (
+            f"configured:optimizer={optimizer_backend}::{optimizer_model};"
+            f"target={target_backend}::{target_model}"
+        )
+    return _make_backend_key(effective)
 
 
-def _check_model_change(cfg: SleepConfig, state: SleepState) -> None:
+def _make_backend_key(backend: Backend) -> str:
+    """Describe resolved aliases/defaults without exposing credentials."""
+    target = getattr(backend, "target", None)
+    optimizer = getattr(backend, "optimizer", None)
+    if target is not None and optimizer is not None:
+        return (
+            f"optimizer={_make_backend_key(optimizer)};"
+            f"target={_make_backend_key(target)}"
+        )
+    name = str(getattr(backend, "name", backend.__class__.__name__) or "")
+    model = str(getattr(backend, "model", "") or "")
+    return f"{name}::{model}"
+
+
+def _check_model_change(
+    cfg: SleepConfig, state: SleepState, backend: Backend | None = None
+) -> None:
     """Warn when the backend/model has changed since the last night.
 
     Skill text is backend-specific; adopting edits from a different model's
     reflections into a new model's skill file can cause regressions.
     This is advisory only — the cycle continues either way.
     """
-    current_key = _make_model_key(cfg)
+    current_key = (
+        _make_backend_key(backend) if backend is not None else _make_model_key(cfg)
+    )
     prior_key = state.last_model_key
+    if prior_key and state.last_model_key_format < 2:
+        # Version 1 stored raw configuration rather than the resolved backend
+        # model. Defaults and aliases make that value impossible to compare
+        # truthfully, so migrate silently on the next successful night.
+        return
     if prior_key and prior_key != current_key:
         print(
             f"[sleep] WARNING: model changed since last night "
@@ -143,7 +185,8 @@ def _render_report_md(report: SleepReport, cfg: SleepConfig) -> str:
     if report.unmatched_edits:
         lines.append("## Proposed but changed nothing (never reached the gate)")
         lines.append(
-            "_Anchor not found, duplicate/empty add, or an unknown op. "
+            "_Anchor not found, replacement already present, duplicate/empty "
+            "add, or an unknown op. "
             "These were never scored — check the anchor text if a rule you expected is missing._")
         for e in report.unmatched_edits:
             anchor = f"  \n  _anchor: `{e.anchor}`_" if e.anchor else ""
@@ -180,10 +223,7 @@ def run_sleep_cycle(
     """
     cfg = cfg or load_config()
     state = SleepState.load(cfg.state_path)
-    _check_model_change(cfg, state)  # F16: warn if model changed between nights
-    night = state.begin_night(clock)
     project = _project_paths(cfg)
-    started = _now_iso(clock)
 
     backend = backend or build_backend(
         backend=cfg.get("backend", "mock"),
@@ -198,6 +238,9 @@ def run_sleep_cycle(
         preferences=cfg.get("preferences", ""),
         project_dir=project,
     )
+    _check_model_change(cfg, state, backend)  # F16: warn if model changed between nights
+    night = state.begin_night(clock)
+    started = _now_iso(clock)
     backend.preferences = cfg.get("preferences", "")
     _progress(cfg, f"night {night}: project={project} backend={backend.name}")
 
@@ -466,7 +509,7 @@ def run_sleep_cycle(
             "baseline": result.baseline_score, "candidate": result.candidate_score,
             "n_tasks": len(tasks), "staging": staging_dir,
         })
-        state.set_last_model_key(_make_model_key(cfg))  # F16: track model for next night
+        state.set_last_model_key(_make_backend_key(backend))  # F16: track resolved model
         # ── 6. adopt (opt-in) ────────────────────────────────────────────
         if cfg.get("auto_adopt") and result.accepted:
             adopted_paths = adopt_staging(staging_dir)

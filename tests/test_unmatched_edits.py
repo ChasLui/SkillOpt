@@ -36,6 +36,18 @@ class TestUnmatchedEdits(unittest.TestCase):
         self.assertEqual((applied, unmatched), ([], [e]))
         self.assertEqual(new_doc, doc)
 
+    def test_replace_with_identical_content_is_unmatched(self) -> None:
+        doc = _doc("keep this exact rule")
+        e = EditRecord(
+            target="skill",
+            op="replace",
+            content="keep this exact rule",
+            anchor="exact rule",
+        )
+        new_doc, applied, unmatched = apply_edits_detailed(doc, [e])
+        self.assertEqual((applied, unmatched), ([], [e]))
+        self.assertEqual(new_doc, doc)
+
     def test_duplicate_add_is_unmatched_not_applied(self) -> None:
         doc = _doc("existing rule")
         e = EditRecord(target="skill", op="add", content="Existing   Rule")
