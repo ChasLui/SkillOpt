@@ -138,6 +138,11 @@ class SleepReport:
     no_edits_reason: str = ""
     edits: List[EditRecord] = field(default_factory=list)
     rejected_edits: List[EditRecord] = field(default_factory=list)
+    # Proposed edits that changed nothing (anchor absent, duplicate/empty add,
+    # unknown op). They were never scored by the gate, so they belong in neither
+    # list above — without them a night can report no edits while the optimizer
+    # actually produced several.
+    unmatched_edits: List[EditRecord] = field(default_factory=list)
     tokens_used: int = 0
     notes: List[str] = field(default_factory=list)
 

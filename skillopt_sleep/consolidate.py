@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from skillopt_sleep.backend import Backend
-from skillopt_sleep.memory import apply_edits
+from skillopt_sleep.memory import apply_edits_detailed
 from skillopt_sleep.replay import aggregate_scores, replay_batch
 from skillopt_sleep.types import EditRecord, ReplayResult, TaskRecord
 
@@ -37,6 +37,11 @@ class ConsolidationResult:
     holdout_baseline: float
     holdout_candidate: float
     # ── observability (so a 0.0->0.0 night is self-diagnosing, not a black box) ──
+    # Edits that changed nothing (anchor not found, or a duplicate add). They are
+    # neither applied nor gate-rejected, so without this list they would vanish
+    # from the report and the night would look like the optimizer produced less
+    # than it did.
+    unmatched_edits: List[EditRecord] = field(default_factory=list)
     holdout_detail: List[dict] = field(default_factory=list)  # per val task: hard/soft/resp/why
     reflect_raw: str = ""        # the optimizer's last raw reply (empty => reflect produced nothing)
     call_error: str = ""         # backend's last call error (timeout/auth/empty)
@@ -143,6 +148,7 @@ def consolidate(
     cand_skill, cand_memory = skill, memory
     all_applied: List[EditRecord] = []
     all_rejected: List[EditRecord] = []
+    all_unmatched: List[EditRecord] = []
 
     def _edits_payload(edits: List[EditRecord]) -> List[dict]:
         return [{"op": e.op, "content": e.content, "anchor": e.anchor,
@@ -155,7 +161,12 @@ def consolidate(
                    n_edits=len(edits), edits=_edits_payload(edits))
         if not edits:
             return doc
-        new_doc, applied = apply_edits(doc, edits)
+        new_doc, applied, unmatched = apply_edits_detailed(doc, edits)
+        if unmatched:
+            all_unmatched.extend(unmatched)
+            if ev is not None:
+                ev.log("reflect", "edits_unmatched", target=which,
+                       n_edits=len(unmatched), edits=_edits_payload(unmatched))
         if not applied:
             return doc
         # gate OFF: accept greedily with NO val scoring (the daily-use path)
@@ -277,6 +288,13 @@ def consolidate(
         else:
             action = "accept" if final_score > base_gate_score else "reject"
             accepted = bool(all_applied) and final_score > base_gate_score
+        # The gate scores documents, not edit bookkeeping: when every proposed
+        # edit was dropped during the per-target trials, `all_applied` is empty
+        # and nothing changed, yet the score comparison can still yield an
+        # accept-flavoured action. Reporting that as "accept_new_best" while
+        # `accepted` is False makes the headline contradict the outcome.
+        if not accepted and action in {"accept", "accept_new_best"}:
+            action = "reject"
 
     if ev is not None:
         w = max(0.0, min(1.0, float(gate_mixed_weight)))
@@ -297,7 +315,8 @@ def consolidate(
                candidate_hard=final_hard, candidate_soft=final_soft,
                metric=gate_metric, mixed_weight=gate_mixed_weight,
                formula=formula, n_applied=len(all_applied),
-               n_rejected=len(all_rejected), night=night)
+               n_rejected=len(all_rejected),
+               n_unmatched=len(all_unmatched), night=night)
 
     return ConsolidationResult(
         accepted=accepted,
@@ -308,6 +327,7 @@ def consolidate(
         new_memory=cand_memory if accepted else memory,
         applied_edits=all_applied,
         rejected_edits=all_rejected,
+        unmatched_edits=all_unmatched,
         holdout_baseline=base_hard,
         holdout_candidate=final_hard,
         holdout_detail=holdout_detail,
