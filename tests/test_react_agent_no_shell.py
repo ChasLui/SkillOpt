@@ -29,6 +29,17 @@ def test_similarly_named_executable_is_blocked(tmp_path) -> None:
     assert "blocked" in out.lower()
 
 
+def test_python_child_does_not_inherit_parent_secrets(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("SUPER_SECRET_TOKEN", "must-not-leak")
+    out = _run_bash(
+        'python -c "import os; print(os.environ.get(\'SUPER_SECRET_TOKEN\', \'ABSENT\'))"',
+        str(tmp_path),
+    )
+    assert out == "ABSENT"
+
+
 def test_shell_metacharacters_not_interpreted(tmp_path) -> None:
     # With shell=False the ';' and following tokens become arguments to python,
     # not a second shell command, so the marker file must NOT be created.
