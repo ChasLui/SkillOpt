@@ -34,12 +34,21 @@ isolation boundary.
    the agent can reach the shim, the nonce and the audit log, and can modify the
    project tree the harness re-runs from. It is meaningful because the candidate
    is trusted; it is not an adversarial oracle.
-   - `harness_test_passes` — the harness re-runs the tests itself after the
-     agent exits, so agent *output* alone cannot fake a pass.
+   - `harness_test_passes` — the harness re-runs the protected test paths after
+     the agent exits, ignoring project pytest config and `conftest.py`, so agent
+     *output* alone cannot fake a pass. A pass requires at least one executed
+     passing test and no failures, errors or skips.
    - `pytest_runs` — count of nonce-tagged invocations of the `pytest`/`python`
      shims.
+   - `pytest_successes` / `pytest_failures` — completed shim invocations are
+     classified from JUnit results; exit code 0 without an executed passing test
+     (for example `pytest --help` or an all-skipped run) is inconclusive and is
+     counted as neither a success nor a failure.
    - `pytest_after_edit` — the last shim invocation is newer than the newest
      project `*.py`, so "fix, then claim done without re-running" fails.
+   - Protected scenario fixtures are hashed before the agent runs. A modified,
+     deleted or symlink-replaced fixture fails the scenario and is not executed
+     by the harness re-run.
 
    ⚠️ The verification re-run **executes agent-modified project code on the
    host**. `ANTHROPIC_API_KEY` is dropped from that re-run's environment, but
