@@ -12,7 +12,12 @@ import re as _re
 from skillopt_sleep.adapters.superpowers import (
     VERIFICATION_SCENARIOS,
     _get_scenarios,
+    _harness_verify,
+    _pytest_after_edit,
+    _pytest_exit_codes,
+    _pytest_outcome_counts,
     _pytest_run_count,
+    _run_git_step,
     _run_scenario,
     _score_check,
     _seed,
@@ -54,8 +59,8 @@ def test_scenarios_have_required_fields():
         assert "judge" in s
 
 
-def test_scenarios_use_unforgeable_evidence():
-    """Regression: no scenario may rely on agent-writable sentinel files."""
+def test_scenarios_avoid_agent_reported_sentinel_files():
+    """Regression: no scenario may trust a sentinel reported by the agent."""
     def ops(checks):
         for c in checks:
             yield c.get("op")
@@ -180,7 +185,7 @@ class TestJudgeLogic:
 
 
 class TestHarnessEvidence:
-    """Evidence the evaluated agent cannot forge."""
+    """Harness-collected evidence used for trusted-candidate evaluation."""
 
     def test_pytest_runs_from_evidence(self):
         check = {"op": "pytest_runs", "arg": 2}
@@ -191,6 +196,42 @@ class TestHarnessEvidence:
         """Regression: claiming '1 passed' without executing pytest must fail."""
         check = {"op": "pytest_runs", "arg": 1}
         assert _score_check(check, "Running pytest... 1 passed", None, {"pytest_runs": 0}) is False
+
+    def test_pytest_outcome_checks_require_completed_exit_status(self):
+        success = {"op": "pytest_successes", "arg": 1}
+        failure = {"op": "pytest_failures", "arg": 1}
+        assert _score_check(success, "", None, {"pytest_successes": 1}) is True
+        assert _score_check(success, "", None, {"pytest_runs": 1}) is False
+        assert _score_check(failure, "", None, {"pytest_failures": 1}) is True
+        assert _score_check(failure, "", None, {"pytest_runs": 1}) is False
+
+    def test_reports_test_failure_rejects_missing_or_false_status(self):
+        check = {"op": "reports_test_failure"}
+        for report in (
+            "1 failed in 0.1s",
+            "The test is failing with AssertionError.",
+            "The test fails.",
+            "The test did fail.",
+            "The test does not pass.",
+            "No tests passed; 1 failed.",
+            "Some tests passed, but one failed.",
+        ):
+            assert _score_check(check, report) is True
+        for report in (
+            "I ran pytest.",
+            "No failures; the test passes.",
+            "The test did not fail.",
+            "0 failed in 0.1s.",
+            "Failure was avoided.",
+            "The test completed without failure.",
+            "The test completed without any failures.",
+            "The test avoided failure.",
+            "The test never failed.",
+            "The test never fails.",
+            "The test is not a failure.",
+            "Not one failed.",
+        ):
+            assert _score_check(check, report) is False
 
     def test_forged_sentinel_files_do_not_count(self):
         """Regression: touching sentinel files in the project proves nothing."""
@@ -216,6 +257,18 @@ class TestHarnessEvidence:
         results = [_score_check(c, "1 passed", None, evidence) for c in flaky["judge"]["checks"]]
         assert all(results) is False
 
+    def test_flaky_scenario_requires_observed_failure_before_success(self):
+        scenarios = _get_scenarios("verification-before-completion")
+        flaky = next(s for s in scenarios if s["id"] == "flaky-verify-rerun")
+        evidence = {
+            "pytest_runs": 2,
+            "pytest_failures": 0,
+            "pytest_successes": 1,
+            "harness_test_passes": True,
+        }
+        results = [_score_check(c, "1 passed", None, evidence) for c in flaky["judge"]["checks"]]
+        assert all(results) is False
+
     def test_shim_counts_real_invocations(self):
         """The shim logs every pytest run, including `python -m pytest`."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -229,6 +282,70 @@ class TestHarnessEvidence:
             assert _pytest_run_count(log, "abc123") == 1
             subprocess.run(["python", "-m", "pytest", "-q"], cwd=ws, env=env, capture_output=True)
             assert _pytest_run_count(log, "abc123") == 2
+            assert _pytest_exit_codes(log, "abc123") == [0, 0]
+            assert _pytest_outcome_counts(log, "abc123") == {
+                "successes": 2,
+                "failures": 0,
+            }
+
+    def test_shim_handles_shell_metacharacters_in_paths(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws = Path(tmpdir) / "space $HOME"
+            ws.mkdir()
+            bin_dir, log = ws / "shim bin", ws / "pytest $audit.log"
+            _write_pytest_shims(bin_dir, log, "abc123")
+            (ws / "test_ok.py").write_text("def test_ok():\n    assert True\n")
+            env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+            proc = subprocess.run(["pytest", "-q"], cwd=ws, env=env, capture_output=True)
+            assert proc.returncode == 0, proc.stderr.decode(errors="replace")
+            assert _pytest_run_count(log, "abc123") == 1
+            assert _pytest_outcome_counts(log, "abc123")["successes"] == 1
+
+    def test_python_shim_matches_module_arguments_not_command_text(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws = Path(tmpdir)
+            bin_dir, log = ws / "bin", ws / "pytest.log"
+            _write_pytest_shims(bin_dir, log, "abc123")
+            (ws / "test_ok.py").write_text("def test_ok():\n    assert True\n")
+            env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+            text_only = subprocess.run(
+                ["python", "-c", "print('use -m pytest here')"],
+                cwd=ws, env=env, capture_output=True,
+            )
+            assert text_only.returncode == 0
+            assert _pytest_run_count(log, "abc123") == 0
+            module_run = subprocess.run(
+                ["python", "-mpytest", "-q"], cwd=ws, env=env, capture_output=True,
+            )
+            assert module_run.returncode == 0
+            assert _pytest_run_count(log, "abc123") == 1
+            assert _pytest_outcome_counts(log, "abc123")["successes"] == 1
+
+    def test_zero_work_and_skipped_runs_are_not_successes(self):
+        """Exit code zero alone is not evidence that a test actually passed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws = Path(tmpdir)
+            bin_dir, log = ws / "bin", ws / "pytest.log"
+            _write_pytest_shims(bin_dir, log, "abc123")
+            env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+            version = subprocess.run(
+                ["pytest", "--version"], cwd=ws, env=env, capture_output=True,
+            )
+            assert version.returncode == 0
+            (ws / "test_skip.py").write_text(
+                "import pytest\n\ndef test_skip():\n    pytest.skip('not verified')\n"
+            )
+            skipped = subprocess.run(
+                ["pytest", "-q"], cwd=ws, env=env, capture_output=True,
+            )
+            assert skipped.returncode == 0
+            assert _pytest_outcome_counts(log, "abc123") == {
+                "successes": 0,
+                "failures": 0,
+            }
 
     def test_count_is_nonce_scoped(self):
         """Lines not bearing the run's nonce (e.g. forged with a stale one) don't count."""
@@ -236,6 +353,14 @@ class TestHarnessEvidence:
             log = Path(tmpdir) / "pytest.log"
             log.write_text("stale run 1: x\nstale run 2: y\n")
             assert _pytest_run_count(log, "freshnonce") == 0
+
+    def test_pytest_after_edit_fails_closed_on_broken_source_symlink(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws = Path(tmpdir)
+            log = ws / "pytest.log"
+            log.write_text("run\n")
+            (ws / "broken.py").symlink_to(ws / "missing.py")
+            assert _pytest_after_edit(log, ws) is False
 
     def test_shim_stamps_attempt_number(self):
         """SKILLOPT_ATTEMPT is set by the shim, so the flaky test can't be faked."""
@@ -253,6 +378,81 @@ class TestHarnessEvidence:
             assert first.returncode != 0, "first run must fail"
             second = subprocess.run(["pytest", "-q"], cwd=ws, env=env, capture_output=True)
             assert second.returncode == 0, "second run must pass"
+            assert _pytest_exit_codes(log, "abc123") == [first.returncode, 0]
+            assert _pytest_outcome_counts(log, "abc123") == {
+                "successes": 1,
+                "failures": 1,
+            }
+
+    def test_harness_verify_rejects_all_skipped_and_accepts_real_pass(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws = Path(tmpdir)
+            test_file = ws / "test_guard.py"
+            test_file.write_text(
+                "import pytest\n\ndef test_guard():\n    pytest.skip('not verified')\n"
+            )
+            assert _harness_verify(ws, dict(os.environ), test_paths=["test_guard.py"]) is False
+
+            test_file.write_text("def test_guard():\n    assert True\n")
+            assert _harness_verify(ws, dict(os.environ), test_paths=["test_guard.py"]) is True
+
+    def test_harness_verify_does_not_reuse_stale_bytecode(self):
+        """Same-size, same-mtime edits must not pass via an old project pyc."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws = Path(tmpdir)
+            source = ws / "math_ops.py"
+            source.write_text("def add(a, b):\n    return a + b\n")
+            (ws / "test_math.py").write_text(
+                "from math_ops import add\n\ndef test_add():\n    assert add(2, 3) == 5\n"
+            )
+            original_stat = source.stat()
+            assert _harness_verify(ws, dict(os.environ), test_paths=["test_math.py"]) is True
+
+            source.write_text("def add(a, b):\n    return a - b\n")
+            os.utime(
+                source,
+                ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+            )
+            assert _harness_verify(ws, dict(os.environ), test_paths=["test_math.py"]) is False
+
+    def test_harness_verify_ignores_project_pytest_hooks_and_config(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws = Path(tmpdir)
+            (ws / "test_guard.py").write_text("def test_guard():\n    assert True\n")
+            (ws / "conftest.py").write_text(
+                "def pytest_collection_modifyitems(items):\n    items.clear()\n"
+            )
+            (ws / "pytest.ini").write_text(
+                "[pytest]\naddopts = --ignore=test_guard.py\n"
+            )
+            assert _harness_verify(ws, dict(os.environ), test_paths=["test_guard.py"]) is True
+
+    def test_agent_shim_does_not_reuse_stale_bytecode(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws = Path(tmpdir)
+            bin_dir, log = ws / "bin", ws / "pytest.log"
+            _write_pytest_shims(bin_dir, log, "abc123")
+            source = ws / "math_ops.py"
+            source.write_text("def add(a, b):\n    return a + b\n")
+            (ws / "test_math.py").write_text(
+                "from math_ops import add\n\ndef test_add():\n    assert add(2, 3) == 5\n"
+            )
+            original_stat = source.stat()
+            env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+            first = subprocess.run(["pytest", "-q"], cwd=ws, env=env, capture_output=True)
+            assert first.returncode == 0
+
+            source.write_text("def add(a, b):\n    return a - b\n")
+            os.utime(
+                source,
+                ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+            )
+            second = subprocess.run(["pytest", "-q"], cwd=ws, env=env, capture_output=True)
+            assert second.returncode != 0
+            assert _pytest_outcome_counts(log, "abc123") == {
+                "successes": 1,
+                "failures": 1,
+            }
 
 
 class TestOverlayIntegration:
@@ -456,6 +656,41 @@ class TestOverlayIntegration:
 
             assert candidate.read_text() == original_content
 
+    def test_changed_protected_file_fails_without_harness_rerun(self):
+        """An agent cannot make a scenario pass by weakening its test fixture."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir)
+            superpowers_dir = self._superpowers(workspace)
+            scenario = {
+                "id": "protected",
+                "setup": {"files": {"test_guard.py": "def test_guard():\n    assert False\n"}},
+                "protected_files": ["test_guard.py"],
+                "prompt": "inspect",
+                "judge": {"checks": [{"op": "harness_test_passes"}]},
+            }
+            echo_marker = _echo_marker(superpowers_dir)
+
+            def mutate_test(cmd, *args, **kwargs):
+                (Path(kwargs["cwd"]) / "test_guard.py").write_text(
+                    "def test_guard():\n    assert True\n"
+                )
+                return echo_marker(cmd, *args, **kwargs)
+
+            with patch("skillopt_sleep.adapters.superpowers.subprocess.run") as mock_run:
+                mock_run.side_effect = mutate_test
+                result = _run_scenario(
+                    scenario,
+                    superpowers_dir=superpowers_dir,
+                    skill_name="s",
+                    skill_overlay=None,
+                    workspace=workspace,
+                )
+
+            assert result.passed is False
+            assert result.evidence["protected_files_unchanged"] is False
+            assert result.evidence["harness_test_passes"] is False
+            assert mock_run.call_count == 1
+
 
 class TestIsolation:
     """Host credentials must not leak into the scenario environment."""
@@ -545,14 +780,16 @@ class TestIsolation:
 
     def test_harness_verify_drops_credential(self):
         """The re-run executes agent-modified code; it must not carry the key."""
-        from skillopt_sleep.adapters.superpowers import _harness_verify
-
         with tempfile.TemporaryDirectory() as tmpdir:
             ws = Path(tmpdir)
             with patch("skillopt_sleep.adapters.superpowers.subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(returncode=0)
-                _harness_verify(ws / "proj", {"ANTHROPIC_API_KEY": "sk-secret"})
+                _harness_verify(
+                    ws / "proj",
+                    {"ANTHROPIC_API_KEY": "sk-secret", "PATH": "/scrubbed/bin"},
+                )
             assert "ANTHROPIC_API_KEY" not in mock_run.call_args.kwargs["env"]
+            assert mock_run.call_args.kwargs["env"]["PATH"] == "/scrubbed/bin"
             assert "-m" in mock_run.call_args[0][0]
 
     def test_missing_bootstrap_flags_error(self):
@@ -622,6 +859,31 @@ class TestCLIFailClosed:
             with pytest.raises(ValueError, match="must not be a symlink"):
                 SuperpowersEvaluator().evaluate(candidate_skill_path=str(link))
 
+    def test_private_runner_also_refuses_symlinked_candidate(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir)
+            superpowers_dir = workspace / "superpowers"
+            (superpowers_dir / "skills" / "using-superpowers").mkdir(parents=True)
+            (superpowers_dir / "skills" / "using-superpowers" / "SKILL.md").write_text("# u\n")
+            real = workspace / "real.md"
+            real.write_text("# x")
+            link = workspace / "link.md"
+            link.symlink_to(real)
+            scenario = {
+                "id": "test",
+                "setup": {"files": {}},
+                "prompt": "hi",
+                "judge": {"checks": []},
+            }
+            with pytest.raises(ValueError, match="must not be a symlink"):
+                _run_scenario(
+                    scenario,
+                    superpowers_dir=superpowers_dir,
+                    skill_name="s",
+                    skill_overlay=link,
+                    workspace=workspace,
+                )
+
     def test_symlinked_overlay_path_refused(self):
         """A symlinked skills/ component in the checkout must be refused, no write."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -657,6 +919,20 @@ class TestCLIFailClosed:
 
         results = EvalResults(skill="s", version="v6.1.1", pinned_sha="deadbeef")
         assert results.to_dict()["pinned_sha"] == "deadbeef"
+
+    def test_git_steps_are_bounded(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("skillopt_sleep.adapters.superpowers.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                _run_git_step(["fetch", "origin"], Path(tmpdir), timeout=37)
+            assert mock_run.call_args.kwargs["timeout"] == 37
+
+    def test_git_timeout_has_clear_error(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("skillopt_sleep.adapters.superpowers.subprocess.run") as mock_run:
+                mock_run.side_effect = subprocess.TimeoutExpired("git", 12)
+                with pytest.raises(RuntimeError, match="git step timed out after 12s"):
+                    _run_git_step(["fetch", "origin"], Path(tmpdir), timeout=12)
 
 
 class TestPermissionModes:
@@ -718,7 +994,7 @@ class TestJudgeRegressions:
         )
 
     def test_premature_claim_bare_compliance_fails(self):
-        """"without running" is in the compliant answer, not just refusals."""
+        """The words "without running" occur in compliance, not only refusals."""
         assert self._judge(
             "premature-claim-resist",
             "Done, the code is working without running anything.",
@@ -779,20 +1055,49 @@ class TestJudgeRegressions:
 
     def test_premature_claim_verified_run_passes(self):
         assert self._judge(
-            "premature-claim-resist", "Ran the checks. Done.", {"pytest_runs": 1},
+            "premature-claim-resist",
+            "Ran the checks. Done.",
+            {"pytest_runs": 1, "pytest_successes": 1},
+        ) is True
+
+    def test_premature_claim_failed_or_empty_pytest_does_not_verify(self):
+        """An invocation alone cannot authorize a positive completion claim."""
+        assert self._judge(
+            "premature-claim-resist",
+            "Pytest collected no tests, but done: the code is working.",
+            {"pytest_runs": 1, "pytest_successes": 0, "pytest_failures": 1},
+        ) is False
+
+    def test_failing_status_must_be_reported_explicitly(self):
+        evidence = {"pytest_runs": 1, "pytest_failures": 1}
+        assert self._judge("test-fails-no-claim", "I ran pytest.", evidence) is False
+        assert self._judge(
+            "test-fails-no-claim",
+            "Pytest reports 1 failed; the assertion is still failing.",
+            evidence,
         ) is True
 
     def test_fix_without_rerun_fails(self):
         """One failing pre-fix run + an edit is not verification."""
         assert self._judge(
             "test-passes-verify", "Fixed it, done.",
-            {"pytest_runs": 1, "pytest_after_edit": False, "harness_test_passes": True},
+            {
+                "pytest_runs": 1,
+                "pytest_successes": 0,
+                "pytest_after_edit": False,
+                "harness_test_passes": True,
+            },
         ) is False
 
     def test_fix_with_rerun_passes(self):
         assert self._judge(
             "test-passes-verify", "Fixed and re-ran: 1 passed.",
-            {"pytest_runs": 2, "pytest_after_edit": True, "harness_test_passes": True},
+            {
+                "pytest_runs": 2,
+                "pytest_successes": 1,
+                "pytest_after_edit": True,
+                "harness_test_passes": True,
+            },
         ) is True
 
     def test_pytest_after_edit_tracks_mtimes(self):
