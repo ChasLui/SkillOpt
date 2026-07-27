@@ -100,11 +100,59 @@ class TestValidateChecks(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("integer", errors[0])
 
+    def test_negative_char_bounds_are_errors(self) -> None:
+        for op in ("max_chars", "min_chars"):
+            errors, _warnings = validate_checks(
+                {"checks": [{"op": op, "arg": -1}]}
+            )
+            self.assertEqual(len(errors), 1)
+            self.assertIn("negative", errors[0])
+
+    def test_non_integral_or_non_finite_char_bounds_are_errors(self) -> None:
+        for arg in (1.9, float("inf"), float("-inf"), float("nan")):
+            errors, _warnings = validate_checks(
+                {"checks": [{"op": "max_chars", "arg": arg}]}
+            )
+            self.assertEqual(len(errors), 1, repr(arg))
+            self.assertIn("integer", errors[0])
+
+    def test_integral_float_and_integer_string_bounds_are_valid(self) -> None:
+        for arg in (2.0, " 2 ", "+2"):
+            errors, _warnings = validate_checks(
+                {"checks": [{"op": "max_chars", "arg": arg}]}
+            )
+            self.assertEqual(errors, [], repr(arg))
+
+    def test_zero_min_chars_is_flagged_as_toothless(self) -> None:
+        errors, warnings = validate_checks(
+            {"checks": [{"op": "min_chars", "arg": 0}]}
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("always passes", warnings[0])
+
+    def test_empty_string_operator_arguments_are_errors(self) -> None:
+        for op in ("regex", "section_present", "contains", "tool_called"):
+            errors, _warnings = validate_checks(
+                {"checks": [{"op": op, "arg": "  "}]}
+            )
+            self.assertEqual(len(errors), 1, op)
+            self.assertIn("non-empty", errors[0])
+
     def test_unknown_op_is_only_a_warning(self) -> None:
         errors, warnings = validate_checks({"checks": [{"op": "vibes", "arg": 1}]})
         self.assertEqual(errors, [])
         self.assertEqual(len(warnings), 1)
         self.assertIn("always passes", warnings[0])
+
+    def test_non_string_op_is_a_structured_error(self) -> None:
+        for op in ([], {}, 1, None):
+            errors, warnings = validate_checks(
+                {"checks": [{"op": op, "arg": "value"}]}
+            )
+            self.assertEqual(len(errors), 1, repr(op))
+            self.assertIn("must be a string", errors[0])
+            self.assertEqual(warnings, [])
 
     def test_non_object_check_is_an_error(self) -> None:
         errors, _warnings = validate_checks({"checks": ["not-an-object"]})

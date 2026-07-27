@@ -93,6 +93,7 @@ def apply_edits_detailed(
     whenever it left the document unchanged:
 
     * ``delete``/``replace`` whose anchor matches no existing line;
+    * ``replace`` whose replacement is already present verbatim;
     * ``add`` whose content duplicates an existing line (normalized), or is
       empty/whitespace;
     * any unrecognized op.
@@ -129,12 +130,13 @@ def apply_edits_detailed(
                 unmatched.append(e)
         elif op == "replace":
             anchor = _norm(e.anchor)
+            replacement = e.content.strip()
             new_lines = []
             changed = False
             for line in lines:
                 if anchor and anchor in _norm(line):
-                    new_lines.append(e.content.strip())
-                    changed = True
+                    new_lines.append(replacement)
+                    changed = changed or replacement != line
                 else:
                     new_lines.append(line)
             if changed:

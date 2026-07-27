@@ -418,6 +418,29 @@ def load_config(args: argparse.Namespace) -> dict:
                 DeprecationWarning,
                 stacklevel=2,
             )
+    _structured_credential_guidance = dict(_credential_guidance)
+    _structured_credential_guidance.update({
+        # MiniMax is currently configured through one shared runtime client; a
+        # secret supplied through either role-shaped field belongs in the
+        # shared MINIMAX_API_KEY environment variable instead.
+        "optimizer_minimax_api_key": _credential_guidance["minimax_api_key"],
+        "target_minimax_api_key": _credential_guidance["minimax_api_key"],
+    })
+    _credential_suffixes = ("api_key", "api-key", "token", "secret", "password")
+    for _override in getattr(args, "cfg_options", None) or []:
+        _key, _separator, _value = str(_override).partition("=")
+        _key = _key.strip()
+        _leaf = _key.casefold().rsplit(".", 1)[-1]
+        _guidance = _structured_credential_guidance.get(_leaf)
+        if not _guidance and _leaf.endswith(_credential_suffixes):
+            _guidance = "a backend-specific environment variable or managed identity"
+        if _separator and _guidance and _value:
+            warnings.warn(
+                f"--cfg-options {_key}=... exposes a credential in "
+                f"the process command line: provide it via {_guidance} instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
     cfg = _load(args.config, overrides=args.cfg_options)
     structured = is_structured(cfg)
