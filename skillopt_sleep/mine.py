@@ -34,6 +34,18 @@ def _short(text: str, n: int = 600) -> str:
     return text if len(text) <= n else text[:n] + " …"
 
 
+def session_skill_hint(digest: SessionDigest) -> str:
+    """Return the session's unambiguous skill, or "" when there is none.
+
+    A session that invoked exactly one skill names the skill its tasks
+    exercised. Zero skills (unknown) and several skills (ambiguous) both
+    return "", which leaves those tasks in the existing catch-all path.
+    """
+    skills = [s for s in (digest.skills_used or []) if s]
+    unique = list(dict.fromkeys(skills))
+    return unique[0] if len(unique) == 1 else ""
+
+
 def _looks_negative(signals: List[str]) -> bool:
     return any(s.startswith("neg:") for s in signals)
 
@@ -196,6 +208,7 @@ def heuristic_mine(
                 reference="",
                 tags=tags,
                 source_sessions=[d.session_id],
+                skill_hint=session_skill_hint(d),
             )
         )
         if len(tasks) >= max_tasks:
@@ -214,6 +227,12 @@ def dedup_tasks(tasks: List[TaskRecord]) -> List[TaskRecord]:
             order = {"success": 3, "fail": 2, "mixed": 1, "unknown": 0}
             if order.get(t.outcome, 0) > order.get(ex.outcome, 0):
                 ex.outcome = t.outcome
+            # merged sessions disagreeing about the skill make the hint
+            # ambiguous, so drop back to the catch-all path
+            if not ex.skill_hint:
+                ex.skill_hint = t.skill_hint
+            elif t.skill_hint and t.skill_hint != ex.skill_hint:
+                ex.skill_hint = ""
         else:
             by_id[t.id] = t
     return list(by_id.values())
