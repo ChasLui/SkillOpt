@@ -18,7 +18,7 @@ import hashlib
 import os
 import re
 from collections import Counter
-from typing import Callable, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from skillopt_sleep.backend import CursorBackendError
 from skillopt_sleep.types import SessionDigest, TaskRecord
@@ -236,6 +236,30 @@ def dedup_tasks(tasks: List[TaskRecord]) -> List[TaskRecord]:
         hints = hints_by_id.get(task_id, set())
         task.skill_hint = next(iter(hints)) if len(hints) == 1 else ""
     return list(by_id.values())
+
+
+def group_tasks_by_skill_hint(
+    tasks: List[TaskRecord],
+    managed_skill_name: str,
+) -> Dict[str, List[TaskRecord]]:
+    """Group mined tasks by their skill hint, in first-seen order.
+
+    A task ID reaches a hinted group only when every observation of it agrees on
+    the same non-empty hint. Missing hints, conflicting hints, and a mixture of
+    hinted and unhinted observations all fall back to ``managed_skill_name`` —
+    the existing catch-all skill — so ambiguous evidence never invents a group.
+    Each task ID is emitted exactly once, with ``dedup_tasks`` merge semantics.
+    """
+    observed: dict = {}
+    for t in tasks:
+        observed.setdefault(t.id, set()).add((t.skill_hint or "").strip())
+
+    groups: Dict[str, List[TaskRecord]] = {}
+    for task in dedup_tasks(tasks):
+        hints = observed[task.id]
+        hint = next(iter(hints)) if len(hints) == 1 else ""
+        groups.setdefault(hint or managed_skill_name, []).append(task)
+    return groups
 
 
 def assign_splits(
