@@ -29,6 +29,10 @@ class SessionDigest:
     user_prompts: List[str] = field(default_factory=list)
     assistant_finals: List[str] = field(default_factory=list)
     tools_used: List[str] = field(default_factory=list)
+    # Skill targets invoked through the Claude ``Skill`` tool, in first-seen
+    # order. Optional and default-empty: harvesters that do not observe skill
+    # invocations, and digests persisted before this field existed, leave it [].
+    skills_used: List[str] = field(default_factory=list)
     files_touched: List[str] = field(default_factory=list)
     feedback_signals: List[str] = field(default_factory=list)  # "still broken", "perfect", ...
     n_user_turns: int = 0
