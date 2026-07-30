@@ -70,10 +70,6 @@ class TaskRecord:
     judge: Dict[str, Any] = field(default_factory=dict)  # gbrain-style rule judge
     tags: List[str] = field(default_factory=list)
     source_sessions: List[str] = field(default_factory=list)
-    # Which skill this task exercised, when the source session invoked exactly
-    # one. Empty means unknown or ambiguous, which keeps the task in the
-    # existing managed-skill catch-all path.
-    skill_hint: str = ""
     # split ∈ {train, val, test}.  val + test come ONLY from real mined tasks and
     # never overlap (val gates updates, test is the final held-out measure). train
     # may be dream-augmented (see origin).  Legacy values replay->train,
@@ -84,6 +80,10 @@ class TaskRecord:
     # allowed into val/test, which is the anti-overfitting guarantee.
     origin: str = "real"
     derived_from: str = ""            # for dream tasks: the real task id it varies
+    # Which skill this task exercised, when the source session invoked exactly
+    # one. Empty means unknown or ambiguous, which keeps the task in the
+    # existing managed-skill catch-all path. Kept last for positional compatibility.
+    skill_hint: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

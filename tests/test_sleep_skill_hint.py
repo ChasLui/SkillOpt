@@ -6,7 +6,9 @@ Run:  python -m pytest tests/test_sleep_skill_hint.py
 from __future__ import annotations
 
 import unittest
+from itertools import permutations, product
 
+from skillopt_sleep.dream import dream_augment, recall_similar
 from skillopt_sleep.llm_miner import _mk_task
 from skillopt_sleep.mine import dedup_tasks, heuristic_mine, session_skill_hint
 from skillopt_sleep.types import SessionDigest, TaskRecord
@@ -39,6 +41,17 @@ class TestTaskRecordSkillHint(unittest.TestCase):
         task = TaskRecord.from_dict(legacy)
         self.assertEqual(task.skill_hint, "")
         self.assertEqual(task.split, "val")
+
+    def test_existing_positional_fields_keep_their_slots(self):
+        task = TaskRecord(
+            "t1", "/repo/example", "x", "context", "system", "attempt",
+            "success", "exact", "answer", {}, ["tag"], ["s1"],
+            "val", "dream", "source-task",
+        )
+        self.assertEqual(task.split, "val")
+        self.assertEqual(task.origin, "dream")
+        self.assertEqual(task.derived_from, "source-task")
+        self.assertEqual(task.skill_hint, "")
 
 
 class TestSessionSkillHint(unittest.TestCase):
@@ -93,6 +106,65 @@ class TestHeuristicMineSkillHint(unittest.TestCase):
                        source_sessions=["s2"]),
         ])
         self.assertEqual([t.skill_hint for t in conflicting], [""])
+
+    def test_dedup_conflict_is_permutation_independent(self):
+        sequences = set(permutations(["skill-a", "skill-b", "skill-a"]))
+        sequences.update(permutations(["skill-b", "skill-a", "skill-b"]))
+        for hints in sequences:
+            with self.subTest(hints=hints):
+                tasks = [
+                    TaskRecord(id="t1", project="/p", intent="x", skill_hint=hint,
+                               source_sessions=[f"s{idx}"])
+                    for idx, hint in enumerate(hints)
+                ]
+                self.assertEqual(dedup_tasks(tasks)[0].skill_hint, "")
+
+    def test_dedup_matches_final_non_empty_hint_set_exhaustively(self):
+        for length in range(1, 5):
+            for hints in product(("", "skill-a", "skill-b"), repeat=length):
+                with self.subTest(hints=hints):
+                    distinct = {hint for hint in hints if hint}
+                    expected = next(iter(distinct)) if len(distinct) == 1 else ""
+                    tasks = [
+                        TaskRecord(id="t1", project="/p", intent="x", skill_hint=hint)
+                        for hint in hints
+                    ]
+                    self.assertEqual(dedup_tasks(tasks)[0].skill_hint, expected)
+
+    def test_dedup_ignores_empty_hints_when_resolving_final_set(self):
+        cases = [
+            (("", "skill-a", ""), "skill-a"),
+            (("skill-a", "", "skill-a"), "skill-a"),
+            (("", "", ""), ""),
+            (("skill-a", "", "skill-b"), ""),
+        ]
+        for hints, expected in cases:
+            with self.subTest(hints=hints):
+                tasks = [
+                    TaskRecord(id="t1", project="/p", intent="x", skill_hint=hint)
+                    for hint in hints
+                ]
+                self.assertEqual(dedup_tasks(tasks)[0].skill_hint, expected)
+
+
+class TestDreamAndRecallSkillHint(unittest.TestCase):
+    def test_dream_augment_preserves_hint(self):
+        source = TaskRecord(
+            id="t1", project="/p", intent="add validation", skill_hint="example-skill"
+        )
+        dreamed = dream_augment([source], factor=1)
+        self.assertEqual(len(dreamed), 1)
+        self.assertEqual(dreamed[0].skill_hint, "example-skill")
+
+    def test_recall_similar_preserves_hint(self):
+        new = TaskRecord(id="new", project="/p", intent="add form validation")
+        historical = TaskRecord(
+            id="old", project="/p", intent="improve form validation",
+            skill_hint="example-skill",
+        )
+        recalled = recall_similar([new], [historical], 1)
+        self.assertEqual(len(recalled), 1)
+        self.assertEqual(recalled[0].skill_hint, "example-skill")
 
 
 class TestLlmMinerSkillHint(unittest.TestCase):

@@ -18,7 +18,7 @@ import hashlib
 import os
 import re
 from collections import Counter
-from typing import Any, Callable, List, Optional, Set, Tuple
+from typing import Callable, List, Optional, Set, Tuple
 
 from skillopt_sleep.backend import CursorBackendError
 from skillopt_sleep.types import SessionDigest, TaskRecord
@@ -219,7 +219,10 @@ def heuristic_mine(
 def dedup_tasks(tasks: List[TaskRecord]) -> List[TaskRecord]:
     """Merge tasks sharing an id (same project+intent across sessions)."""
     by_id: dict = {}
+    hints_by_id: dict = {}
     for t in tasks:
+        if t.skill_hint:
+            hints_by_id.setdefault(t.id, set()).add(t.skill_hint)
         if t.id in by_id:
             ex = by_id[t.id]
             ex.source_sessions = list(dict.fromkeys(ex.source_sessions + t.source_sessions))
@@ -227,14 +230,11 @@ def dedup_tasks(tasks: List[TaskRecord]) -> List[TaskRecord]:
             order = {"success": 3, "fail": 2, "mixed": 1, "unknown": 0}
             if order.get(t.outcome, 0) > order.get(ex.outcome, 0):
                 ex.outcome = t.outcome
-            # merged sessions disagreeing about the skill make the hint
-            # ambiguous, so drop back to the catch-all path
-            if not ex.skill_hint:
-                ex.skill_hint = t.skill_hint
-            elif t.skill_hint and t.skill_hint != ex.skill_hint:
-                ex.skill_hint = ""
         else:
             by_id[t.id] = t
+    for task_id, task in by_id.items():
+        hints = hints_by_id.get(task_id, set())
+        task.skill_hint = next(iter(hints)) if len(hints) == 1 else ""
     return list(by_id.values())
 
 
