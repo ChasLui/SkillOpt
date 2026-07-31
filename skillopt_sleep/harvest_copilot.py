@@ -148,19 +148,22 @@ def _read_jsonl_snapshot(path: str) -> Iterable[Dict[str, Any]]:
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as f:
-            raw = f.read(size)
+            remaining = size
+            while remaining > 0:
+                line = f.readline(remaining)
+                if not line:
+                    break
+                remaining -= len(line)
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line.decode("utf-8"))
+                except (UnicodeDecodeError, ValueError, TypeError):
+                    continue
+                if isinstance(record, dict):
+                    yield record
     except (FileNotFoundError, IsADirectoryError, PermissionError, OSError):
         return
-    for line in raw.splitlines():
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError, TypeError):
-            continue
-        if isinstance(record, dict):
-            yield record
-
 
 def _resolve_parent(root: Any, path: Any) -> tuple[Any, Any] | tuple[None, None]:
     if not isinstance(path, list) or not path:
