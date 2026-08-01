@@ -25,7 +25,8 @@ DEFAULTS: Dict[str, Any] = {
     # ── scope ──────────────────────────────────────────────────────────────
     "claude_home": CLAUDE_HOME,
     "codex_home": CODEX_HOME,
-    "transcript_source": "claude",  # "claude" | "codex" | "auto"
+    "transcript_source": "claude",  # "claude" | "codex" | "copilot" | "auto"
+    "vscode_workspace_storage": "",  # "" => auto-detect platform defaults
     "projects": "invoked",        # "invoked" | "all" | [list of abs paths]
     "invoked_project": "",        # filled at runtime (cwd) when projects == "invoked"
     "lookback_hours": 72,         # harvest window when no prior sleep recorded
@@ -107,6 +108,13 @@ class SleepConfig:
     @property
     def codex_archived_sessions_dir(self) -> str:
         return os.path.join(self.data["codex_home"], "archived_sessions")
+
+    @property
+    def vscode_workspace_storage(self) -> str:
+        value = self.data.get("vscode_workspace_storage", "") or ""
+        if not value:
+            return ""
+        return os.path.abspath(os.path.expanduser(str(value)))
 
     @property
     def history_path(self) -> str:

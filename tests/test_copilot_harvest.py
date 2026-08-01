@@ -172,7 +172,9 @@ class TestCopilotHarvest(unittest.TestCase):
         self.assertEqual(digests, [])
 
     def test_platform_storage_candidates_include_stable_and_insiders(self):
-        mac = default_vscode_workspace_storage_roots(platform="darwin", home="/Users/test")
+        mac = default_vscode_workspace_storage_roots(
+            platform="darwin", env={}, home="/Users/test"
+        )
         linux = default_vscode_workspace_storage_roots(
             platform="linux", env={"XDG_CONFIG_HOME": "/config"}, home="/home/test"
         )

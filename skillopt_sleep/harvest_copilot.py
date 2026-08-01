@@ -104,7 +104,7 @@ def _workspace_project(workspace_dir: str) -> str:
 
 
 def discover_vscode_sessions(workspace_storage: str = "") -> List[CopilotSessionFile]:
-    """Discover VS Code chat JSONL files, newest first, without opening content."""
+    """Discover VS Code chat JSONL files, newest first, without opening session content."""
     roots = [os.path.abspath(os.path.expanduser(workspace_storage))] if workspace_storage else (
         default_vscode_workspace_storage_roots()
     )
