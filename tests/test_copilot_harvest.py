@@ -6,7 +6,9 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import unittest
+from datetime import datetime
 from unittest import mock
 
 from skillopt_sleep.config import load_config
@@ -16,6 +18,7 @@ from skillopt_sleep.harvest_copilot import (
     discover_vscode_sessions,
     harvest_copilot,
     reconstruct_chat_session,
+    _iso_epoch,
 )
 from skillopt_sleep.harvest_sources import harvest_for_config
 
@@ -118,6 +121,43 @@ class TestCopilotHarvest(unittest.TestCase):
 
         self.assertIsNone(digest)
 
+    def test_digest_skips_system_initiated_requests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "system-request.jsonl")
+            snapshot = {
+                "kind": 0,
+                "v": {
+                    "version": 3,
+                    "sessionId": "system-request",
+                    "requests": [
+                        {
+                            "timestamp": 1700000001000,
+                            "agent": {"extensionId": {"_lower": "github.copilot-chat"}},
+                            "message": {"text": "real user prompt"},
+                            "response": [{"value": "visible answer"}],
+                        },
+                        {
+                            "timestamp": 1700000009000,
+                            "isSystemInitiated": True,
+                            "agent": {"extensionId": {"_lower": "github.copilot-chat"}},
+                            "message": {"text": "terminal command completed"},
+                            "response": [{"value": "system notification response"}],
+                        },
+                    ],
+                },
+            }
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(snapshot) + "\n")
+
+            digest = digest_copilot_session(path, project="/tmp/copilot-project")
+
+        self.assertIsNotNone(digest)
+        self.assertEqual(digest.user_prompts, ["real user prompt"])
+        self.assertEqual(digest.assistant_finals, ["visible answer"])
+        self.assertEqual(digest.ended_at, "2023-11-14T22:13:21Z")
+        self.assertEqual(digest.n_user_turns, 1)
+        self.assertEqual(digest.n_assistant_turns, 1)
+
     def test_discovers_sessions_and_resolves_workspace_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
             _workspace, path = self._storage_fixture(tmp)
@@ -155,6 +195,50 @@ class TestCopilotHarvest(unittest.TestCase):
         self.assertEqual(digests[0].project, os.path.abspath("/tmp/copilot-project"))
         self.assertEqual(old_digests, [])
 
+    def test_harvest_compares_fractional_timestamps_chronologically(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _workspace, path = self._storage_fixture(tmp)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "kind": 1,
+                    "k": ["requests", 0, "modelState", "completedAt"],
+                    "v": 1700000010500,
+                }) + "\n")
+
+            included = harvest_copilot(
+                tmp, scope="all", since_iso="2023-11-14T22:13:30Z"
+            )
+            excluded = harvest_copilot(
+                tmp, scope="all", since_iso="2023-11-14T22:13:30.750000Z"
+            )
+            offset_included = harvest_copilot(
+                tmp, scope="all", since_iso="2023-11-14T17:13:30-05:00"
+            )
+
+        self.assertEqual(len(included), 1)
+        self.assertEqual(included[0].ended_at, "2023-11-14T22:13:30.500000Z")
+        self.assertEqual(excluded, [])
+        self.assertEqual(len(offset_included), 1)
+
+    @unittest.skipUnless(hasattr(time, "tzset"), "requires POSIX timezone control")
+    def test_naive_checkpoint_uses_local_timezone_like_sleep_state(self):
+        previous_tz = os.environ.get("TZ")
+        try:
+            # Force a non-UTC local zone so treating the naive value as UTC
+            # would make this assertion fail.
+            os.environ["TZ"] = "UTC-5"
+            time.tzset()
+            cutoff = 1_700_000_000
+            local_checkpoint = datetime.fromtimestamp(cutoff).isoformat()
+
+            self.assertEqual(_iso_epoch(local_checkpoint), cutoff)
+        finally:
+            if previous_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = previous_tz
+            time.tzset()
+
     def test_missing_storage_returns_empty_result(self):
         self.assertEqual(discover_vscode_sessions("/definitely/missing/workspaceStorage"), [])
         self.assertEqual(harvest_copilot("/definitely/missing/workspaceStorage"), [])
@@ -190,6 +274,35 @@ class TestCopilotHarvest(unittest.TestCase):
         self.assertTrue(linux[0].startswith("/config"))
         self.assertIn("AppData", windows[0])
 
+    def test_explicit_empty_environment_remains_isolated(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "XDG_CONFIG_HOME": "/host-config",
+                "VSCODE_PORTABLE": "/host-portable",
+            },
+            clear=True,
+        ):
+            candidates_by_platform = {
+                platform: default_vscode_workspace_storage_roots(
+                    platform=platform, env={}, home=home
+                )
+                for platform, home in (
+                    ("linux", "/home/test"),
+                    ("darwin", "/Users/test"),
+                    ("win32", "C:/Users/test"),
+                )
+            }
+
+        for candidates in candidates_by_platform.values():
+            self.assertEqual(len(candidates), 2)
+            self.assertNotIn("/host-config", "\n".join(candidates))
+            self.assertNotIn("/host-portable", "\n".join(candidates))
+        self.assertEqual(
+            candidates_by_platform["linux"][0],
+            os.path.join("/home/test", ".config", "Code", "User", "workspaceStorage"),
+        )
+
     def test_portable_storage_uses_vscode_portable_data_root(self):
         candidates = default_vscode_workspace_storage_roots(
             platform="linux",
@@ -221,6 +334,26 @@ class TestCopilotHarvest(unittest.TestCase):
         self.assertEqual(cfg.vscode_workspace_storage, os.path.abspath(tmp))
         self.assertEqual(len(digests), 1)
         self.assertEqual(digests[0].session_id, "fixture-session")
+
+    def test_documented_user_config_keys_route_copilot_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._storage_fixture(tmp)
+            config_path = os.path.join(tmp, "config.json")
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "transcript_source": "copilot",
+                    "vscode_workspace_storage": tmp,
+                    "projects": "invoked",
+                }, f)
+            with mock.patch(
+                "skillopt_sleep.config._user_config_path", return_value=config_path
+            ):
+                cfg = load_config(invoked_project="/tmp/copilot-project")
+                digests = harvest_for_config(cfg, limit=10)
+
+        self.assertEqual(cfg.get("transcript_source"), "copilot")
+        self.assertEqual(cfg.vscode_workspace_storage, os.path.abspath(tmp))
+        self.assertEqual(len(digests), 1)
 
     def test_auto_source_behavior_remains_codex_then_claude(self):
         cfg = load_config(

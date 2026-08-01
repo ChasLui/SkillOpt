@@ -47,9 +47,9 @@ def default_vscode_workspace_storage_roots(
     env: Optional[Mapping[str, str]] = None,
     home: Optional[str] = None,
 ) -> List[str]:
-    """Return stable and Insiders ``workspaceStorage`` candidates for an OS."""
+    """Return stable, Insiders, and portable ``workspaceStorage`` candidates."""
     platform = platform or sys.platform
-    env = env or os.environ
+    env = os.environ if env is None else env
     home = os.path.expanduser(home or "~")
 
     if platform == "win32":
@@ -104,7 +104,11 @@ def _workspace_project(workspace_dir: str) -> str:
 
 
 def discover_vscode_sessions(workspace_storage: str = "") -> List[CopilotSessionFile]:
-    """Discover VS Code chat JSONL files, newest first, without opening session content."""
+    """Discover chat logs newest first and read adjacent project mappings.
+
+    Session content remains unopened during discovery; only the neighboring
+    ``workspace.json`` is read to establish project scope.
+    """
     roots = [os.path.abspath(os.path.expanduser(workspace_storage))] if workspace_storage else (
         default_vscode_workspace_storage_roots()
     )
@@ -164,6 +168,7 @@ def _read_jsonl_snapshot(path: str) -> Iterable[Dict[str, Any]]:
                     yield record
     except (FileNotFoundError, IsADirectoryError, PermissionError, OSError):
         return
+
 
 def _resolve_parent(root: Any, path: Any) -> tuple[Any, Any] | tuple[None, None]:
     if not isinstance(path, list) or not path:
@@ -319,6 +324,21 @@ def _iso_timestamp(value: Any) -> str:
         return ""
 
 
+def _iso_epoch(value: Optional[str]) -> Optional[float]:
+    """Parse an ISO-8601 timestamp for chronological comparisons."""
+    if not value:
+        return None
+    try:
+        normalized = value[:-1] + "+00:00" if value[-1:] in {"Z", "z"} else value
+        parsed = datetime.fromisoformat(normalized)
+        # Sleep state checkpoints are local-time strings without an offset.
+        # ``timestamp()`` intentionally interprets those in the host timezone,
+        # matching the existing Cursor harvester and the producer in state.py.
+        return parsed.timestamp()
+    except (OverflowError, OSError, TypeError, ValueError):
+        return None
+
+
 def digest_copilot_session(path: str, project: str = "") -> Optional[SessionDigest]:
     """Build a privacy-bounded digest from one reconstructed VS Code session."""
     session = reconstruct_chat_session(path)
@@ -339,7 +359,11 @@ def digest_copilot_session(path: str, project: str = "") -> Optional[SessionDige
     if not isinstance(requests, list):
         requests = []
     for request in requests:
-        if not isinstance(request, dict) or _extension_id(request) != _COPILOT_EXTENSION_ID:
+        if (
+            not isinstance(request, dict)
+            or _extension_id(request) != _COPILOT_EXTENSION_ID
+            or request.get("isSystemInitiated") is True
+        ):
             continue
         message = request.get("message")
         prompt = _sanitize_text(message.get("text") if isinstance(message, dict) else "")
@@ -393,6 +417,7 @@ def harvest_copilot(
 ) -> List[SessionDigest]:
     """Discover and normalize matching VS Code GitHub Copilot Chat sessions."""
     digests: List[SessionDigest] = []
+    since_epoch = _iso_epoch(since_iso)
     for session_file in discover_vscode_sessions(workspace_storage):
         digest = digest_copilot_session(session_file.path, project=session_file.project)
         if digest is None or _is_headless_replay(digest) or _is_agent_session(digest):
@@ -402,8 +427,16 @@ def harvest_copilot(
             continue
         if not _project_matches(digest.project or "", scope, invoked_project):
             continue
-        if since_iso and digest.ended_at and digest.ended_at < since_iso:
-            continue
+        if since_iso and digest.ended_at:
+            ended_epoch = _iso_epoch(digest.ended_at)
+            if since_epoch is not None and ended_epoch is not None:
+                before_cutoff = ended_epoch < since_epoch
+            else:
+                # Preserve the previous best-effort behavior for malformed or
+                # legacy timestamps that ``datetime.fromisoformat`` cannot parse.
+                before_cutoff = digest.ended_at < since_iso
+            if before_cutoff:
+                continue
         digests.append(digest)
         if limit and len(digests) >= limit:
             break
