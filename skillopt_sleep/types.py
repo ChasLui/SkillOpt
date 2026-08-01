@@ -80,6 +80,10 @@ class TaskRecord:
     # allowed into val/test, which is the anti-overfitting guarantee.
     origin: str = "real"
     derived_from: str = ""            # for dream tasks: the real task id it varies
+    # Which skill this task exercised, when the source session invoked exactly
+    # one. Empty means unknown or ambiguous, which keeps the task in the
+    # existing managed-skill catch-all path. Kept last for positional compatibility.
+    skill_hint: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

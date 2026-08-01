@@ -18,7 +18,7 @@ import hashlib
 import os
 import re
 from collections import Counter
-from typing import Any, Callable, List, Optional, Set, Tuple
+from typing import Callable, List, Optional, Set, Tuple
 
 from skillopt_sleep.backend import CursorBackendError
 from skillopt_sleep.types import SessionDigest, TaskRecord
@@ -32,6 +32,18 @@ def _tid(project: str, intent: str) -> str:
 def _short(text: str, n: int = 600) -> str:
     text = (text or "").strip()
     return text if len(text) <= n else text[:n] + " …"
+
+
+def session_skill_hint(digest: SessionDigest) -> str:
+    """Return the session's unambiguous skill, or "" when there is none.
+
+    A session that invoked exactly one skill names the skill its tasks
+    exercised. Zero skills (unknown) and several skills (ambiguous) both
+    return "", which leaves those tasks in the existing catch-all path.
+    """
+    skills = [s for s in (digest.skills_used or []) if s]
+    unique = list(dict.fromkeys(skills))
+    return unique[0] if len(unique) == 1 else ""
 
 
 def _looks_negative(signals: List[str]) -> bool:
@@ -196,6 +208,7 @@ def heuristic_mine(
                 reference="",
                 tags=tags,
                 source_sessions=[d.session_id],
+                skill_hint=session_skill_hint(d),
             )
         )
         if len(tasks) >= max_tasks:
@@ -206,7 +219,10 @@ def heuristic_mine(
 def dedup_tasks(tasks: List[TaskRecord]) -> List[TaskRecord]:
     """Merge tasks sharing an id (same project+intent across sessions)."""
     by_id: dict = {}
+    hints_by_id: dict = {}
     for t in tasks:
+        if t.skill_hint:
+            hints_by_id.setdefault(t.id, set()).add(t.skill_hint)
         if t.id in by_id:
             ex = by_id[t.id]
             ex.source_sessions = list(dict.fromkeys(ex.source_sessions + t.source_sessions))
@@ -216,6 +232,9 @@ def dedup_tasks(tasks: List[TaskRecord]) -> List[TaskRecord]:
                 ex.outcome = t.outcome
         else:
             by_id[t.id] = t
+    for task_id, task in by_id.items():
+        hints = hints_by_id.get(task_id, set())
+        task.skill_hint = next(iter(hints)) if len(hints) == 1 else ""
     return list(by_id.values())
 
 
