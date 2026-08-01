@@ -15,6 +15,7 @@ Common flags:
     --tasks-file PATH   reviewed TaskRecord JSON file to replay instead of harvesting
     --backend mock|claude|codex|copilot|cursor|handoff
     --source claude|codex|copilot|cursor|auto
+    --vscode-workspace-storage PATH
     --model NAME
     --lookback-hours N
     --auto-adopt

@@ -4,8 +4,8 @@
 > include the generic research `openai_compatible` backend, Sleep handoff,
 > Sleep support for non-Azure OpenAI-compatible endpoints, the Sleep
 > `--preferences` flag, the research `cursor_exec` target harness, or Cursor
-> source/backend/plugin support; use a source install from `main` for those
-> features until the next release.
+> source/backend/plugin support or VS Code Copilot transcript harvesting; use
+> a source install from `main` for those features until the next release.
 
 ## Training
 
@@ -128,10 +128,11 @@ Actions are `run`, `dry-run`, `status`, `adopt`, `harvest`, `schedule`, and
 |---|---|
 | `--project PATH` | Project used for transcript scope, targets, state, and staging (default: current directory) |
 | `--scope invoked\|all` | Harvest this project or all projects |
-| `--source claude\|codex\|cursor\|auto` | Transcript source; `auto` keeps Codex-then-Claude precedence and does not select Cursor |
+| `--source claude\|codex\|copilot\|cursor\|auto` | Transcript source; `auto` keeps Codex-then-Claude precedence and does not select Copilot or Cursor |
 | `--backend mock\|claude\|codex\|copilot\|cursor\|handoff\|azure_openai` | Replay/optimizer backend |
 | `--model NAME` | Backend-specific model override |
 | `--cursor-home PATH` | Override `~/.cursor` for Cursor transcript harvesting |
+| `--vscode-workspace-storage PATH` | Override VS Code's `User/workspaceStorage` root for Copilot transcript harvesting |
 | `--cursor-path PATH` | Path to the installed Cursor Agent CLI |
 | `--preferences TEXT` | House rules supplied to reflection |
 | `--lookback-hours N` | Initial transcript lookback; `0` scans all history |
@@ -141,6 +142,30 @@ Actions are `run`, `dry-run`, `status`, `adopt`, `harvest`, `schedule`, and
 | `--edit-budget N` | Maximum bounded edits for the night |
 | `--progress` / `--json` | Progress or machine-readable output |
 | `--auto-adopt` | Apply an accepted staged proposal automatically |
+
+### VS Code GitHub Copilot Chat source
+
+`--source copilot` reads local VS Code GitHub Copilot Chat session logs from
+the platform's stable and Insiders `User/workspaceStorage` locations, plus the
+portable location when `VSCODE_PORTABLE` is available. Use
+`--vscode-workspace-storage PATH` for a nonstandard root. Each workspace must
+have a readable adjacent `workspace.json` mapping to a local project; unmapped
+windows are skipped so project scoping cannot silently mix unrelated sessions.
+`--source auto` does not select Copilot.
+
+The harvester retains user-entered prompts, visible assistant Markdown, and
+tool names from requests confirmed as GitHub Copilot Chat. It excludes
+system-initiated notifications, reasoning, tool inputs and outputs, rendered
+context, and account/model metadata. Known secret-shaped strings are redacted
+as defense in depth, but review harvested tasks before sending them to a model
+provider. Transcript harvesting is independent of `--backend copilot`, which
+invokes the GitHub Copilot CLI for model calls.
+
+The managed `schedule` command does not persist `--source` or
+`--vscode-workspace-storage`. Before scheduling this source, set
+`"transcript_source": "copilot"` and, when needed,
+`"vscode_workspace_storage": "/absolute/path/to/workspaceStorage"` in
+`~/.skillopt-sleep/config.json`.
 
 ### Cursor source and backend
 
