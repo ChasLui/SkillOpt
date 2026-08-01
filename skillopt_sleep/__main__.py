@@ -14,7 +14,7 @@ Common flags:
     --target-skill-path PATH explicit live SKILL.md to stage/adopt
     --tasks-file PATH   reviewed TaskRecord JSON file to replay instead of harvesting
     --backend mock|claude|codex|copilot|cursor|handoff
-    --source claude|codex|cursor|auto
+    --source claude|codex|copilot|cursor|auto
     --model NAME
     --lookback-hours N
     --auto-adopt
@@ -79,8 +79,10 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--claude-home", default="", help="override ~/.claude (also isolates state)")
     p.add_argument("--codex-home", default="", help="override ~/.codex for archived session harvest")
     p.add_argument("--cursor-home", default="", help="override ~/.cursor for Cursor session harvest")
-    p.add_argument("--source", default="", choices=["", "claude", "codex", "cursor", "auto"],
+    p.add_argument("--source", default="", choices=["", "claude", "codex", "copilot", "cursor", "auto"],
                    help="session transcript source")
+    p.add_argument("--vscode-workspace-storage", default="",
+                   help="override VS Code User/workspaceStorage root for copilot source")
     p.add_argument("--lookback-hours", type=int, default=None,
                    help="harvest window in hours; 0 = scan full history")
     p.add_argument("--edit-budget", type=int, default=0)
@@ -123,6 +125,10 @@ def _cfg_from_args(args, task_meta: Dict[str, Any] | None = None) -> Any:
         overrides["cursor_home"] = os.path.abspath(os.path.expanduser(args.cursor_home))
     if getattr(args, "source", ""):
         overrides["transcript_source"] = args.source
+    if getattr(args, "vscode_workspace_storage", ""):
+        overrides["vscode_workspace_storage"] = os.path.abspath(
+            os.path.expanduser(args.vscode_workspace_storage)
+        )
     lh = getattr(args, "lookback_hours", None)
     if lh is not None:  # --lookback-hours was explicitly passed (0 = full history)
         overrides["lookback_hours"] = lh

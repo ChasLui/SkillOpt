@@ -27,7 +27,8 @@ DEFAULTS: Dict[str, Any] = {
     "claude_home": CLAUDE_HOME,
     "codex_home": CODEX_HOME,
     "cursor_home": CURSOR_HOME,
-    "transcript_source": "claude",  # "claude" | "codex" | "cursor" | "auto"
+    "vscode_workspace_storage": "",  # "" => auto-detect platform defaults
+    "transcript_source": "claude",  # "claude" | "codex" | "copilot" | "cursor" | "auto"
     "projects": "invoked",        # "invoked" | "all" | [list of abs paths]
     "invoked_project": "",        # filled at runtime (cwd) when projects == "invoked"
     "lookback_hours": 72,         # harvest window when no prior sleep recorded
@@ -126,6 +127,13 @@ class SleepConfig:
     def cursor_projects_dir(self) -> str:
         cursor_home = os.path.abspath(os.path.expanduser(str(self.data["cursor_home"])))
         return os.path.join(cursor_home, "projects")
+
+    @property
+    def vscode_workspace_storage(self) -> str:
+        value = self.data.get("vscode_workspace_storage", "") or ""
+        if not value:
+            return ""
+        return os.path.abspath(os.path.expanduser(str(value)))
 
     @property
     def history_path(self) -> str:
