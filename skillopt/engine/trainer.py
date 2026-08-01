@@ -63,6 +63,7 @@ from skillopt.model import (
     configure_azure_openai,
     configure_claude_code_exec,
     configure_codex_exec,
+    configure_cursor_exec,
     configure_minimax_chat,
     configure_qwen_chat,
     get_token_summary,
@@ -681,6 +682,9 @@ class ReflACTTrainer:
             elif backend == "claude_code_exec":
                 optimizer_backend = optimizer_backend or "openai_chat"
                 target_backend = target_backend or "claude_code_exec"
+            elif backend in {"cursor", "cursor_exec"}:
+                optimizer_backend = optimizer_backend or "openai_chat"
+                target_backend = target_backend or "cursor_exec"
             elif backend in {"qwen", "qwen_chat"}:
                 optimizer_backend = optimizer_backend or "openai_chat"
                 target_backend = target_backend or "qwen_chat"
@@ -710,6 +714,10 @@ class ReflACTTrainer:
             use_sdk=cfg.get("claude_code_exec_use_sdk", None),
             effort=cfg.get("claude_code_exec_effort", cfg.get("reasoning_effort", "medium")),
             max_thinking_tokens=cfg.get("claude_code_exec_max_thinking_tokens", 16384),
+        )
+        configure_cursor_exec(
+            path=cfg.get("cursor_exec_path") or None,
+            sandbox=cfg.get("cursor_exec_sandbox") or None,
         )
         configure_qwen_chat(
             base_url=cfg.get("qwen_chat_base_url") or None,

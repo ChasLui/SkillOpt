@@ -45,6 +45,7 @@ model:
 | `minimax_chat` | ✓ | ✓ | MiniMax API |
 | `codex_exec` | — | ✓ | Codex CLI execution harness |
 | `claude_code_exec` | — | ✓ | Claude Code CLI execution harness |
+| `cursor_exec` | — | ✓ | Cursor Agent CLI execution harness |
 
 The current MiniMax adapter has one shared deployment. Set
 `model.minimax_model` when MiniMax is the target; a mixed-backend run cannot
@@ -183,6 +184,9 @@ Model credentials are loaded from environment variables:
 | `OPENAI_COMPATIBLE_MODEL` | `openai_compatible` | Shared provider model ID for direct library use; train/eval YAML role models take precedence |
 | `CLAUDE_CLI_BIN` | `claude_chat` | Optional path to the `claude` executable; defaults to `claude` |
 | `ANTHROPIC_API_KEY` | `claude_chat` | Optional authentication method understood by the Claude CLI, not a direct SkillOpt API client |
+| `CURSOR_EXEC_PATH` | `cursor_exec` | Optional path to `cursor-agent`; defaults to `cursor-agent` |
+| `CURSOR_EXEC_SANDBOX` | `cursor_exec` | Cursor sandbox mode: `enabled` (default) or `disabled` |
+| `CURSOR_API_KEY` | `cursor_exec` | Optional authentication method understood directly by Cursor Agent |
 | `QWEN_CHAT_BASE_URL` | `qwen_chat` | Local Qwen/vLLM endpoint |
 | `QWEN_CHAT_MODEL` | `qwen_chat` | Served model name for direct library use; train/eval YAML role models take precedence |
 | `MINIMAX_BASE_URL` | `minimax_chat` | MiniMax-compatible base URL |
@@ -196,6 +200,14 @@ Azure, OpenAI-compatible, and Qwen variable families. See the
 and authenticate that CLI before use. Setting `ANTHROPIC_API_KEY` is one way
 the CLI may authenticate, but SkillOpt does not call the Anthropic API
 directly through this backend.
+
+`cursor_exec` is a target-only benchmark harness. Install and authenticate
+Cursor Agent first, then select it with `model.target_backend=cursor_exec`.
+Read-only rollouts use Ask mode; artifact-producing rollouts add Cursor's
+headless `--force` flag inside the benchmark workspace. SkillOpt enables the
+Cursor sandbox by default and rejects file-edit rollouts if it is disabled;
+read-only Ask-mode rollouts may explicitly disable it. SkillOpt does not approve
+MCP servers automatically.
 
 ### Three OpenAI-compatible paths
 

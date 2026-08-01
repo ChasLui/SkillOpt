@@ -86,6 +86,34 @@ def _tool_names_from_content(content: Any) -> List[str]:
     return names
 
 
+def _skill_names_from_content(content: Any) -> List[str]:
+    """Extract skill targets from Claude ``Skill`` tool-use blocks.
+
+    Only well-formed invocations count: the block type must be ``tool_use``,
+    its name exactly ``Skill``, and ``input.skill`` a non-blank string. The
+    name is returned whitespace-trimmed but otherwise verbatim; no other tool
+    input and no tool output is read.
+    """
+    names: List[str] = []
+    if not isinstance(content, list):
+        return names
+    for b in content:
+        if not isinstance(b, dict):
+            continue
+        if b.get("type") != "tool_use" or b.get("name") != "Skill":
+            continue
+        args = b.get("input")
+        if not isinstance(args, dict):
+            continue
+        skill = args.get("skill")
+        if not isinstance(skill, str):
+            continue
+        skill = skill.strip()
+        if skill:
+            names.append(skill)
+    return names
+
+
 def _detect_feedback(text: str) -> List[str]:
     low = text.lower()
     sig: List[str] = []
@@ -206,6 +234,7 @@ def digest_transcript(path: str) -> Optional[SessionDigest]:
     user_prompts: List[str] = []
     assistant_finals: List[str] = []
     tools: List[str] = []
+    skills: List[str] = []
     files: List[str] = []
     feedback: List[str] = []
     n_user = 0
@@ -240,6 +269,7 @@ def digest_transcript(path: str) -> Optional[SessionDigest]:
         elif role == "assistant":
             n_asst += 1
             tools.extend(_tool_names_from_content(content))
+            skills.extend(_skill_names_from_content(content))
             text = _text_from_content(content)
             if text.strip():
                 assistant_finals.append(text.strip())
@@ -266,6 +296,7 @@ def digest_transcript(path: str) -> Optional[SessionDigest]:
         user_prompts=user_prompts,
         assistant_finals=assistant_finals[-5:],  # last few finals are the useful ones
         tools_used=_dedup(tools),
+        skills_used=_dedup(skills),
         files_touched=_dedup(files),
         feedback_signals=feedback,
         n_user_turns=n_user,

@@ -192,6 +192,7 @@ not via a base class subclass. Supported values (as of this writing):
 | `openai_compatible` | ✓ | ✓ |
 | `codex_exec` | ✓ | ✓ |
 | `claude_code_exec` | — | ✓ |
+| `cursor_exec` | — | ✓ |
 
 See `skillopt/model/backend_config.py` for the live whitelist and
 [`docs/reference/config.md`](./config.md) for the per-backend

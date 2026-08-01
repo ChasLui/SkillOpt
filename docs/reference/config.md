@@ -18,6 +18,7 @@ selecting the generic OpenAI-compatible backend.
 | `minimax_chat` | ✓ | ✓ |
 | `codex_exec` | ✓ | ✓ |
 | `claude_code_exec` | — | ✓ |
+| `cursor_exec` | — | ✓ |
 
 MiniMax currently has one shared deployment. `model.minimax_model` is applied
 when MiniMax is the target; mixed-backend runs cannot independently choose a
@@ -64,6 +65,8 @@ defaults to `claude` and can be overridden with `CLAUDE_CLI_BIN`.
 | `model.minimax_*` | MiniMax `base_url`, `api_key`, shared `minimax_model`, `temperature`, `max_tokens`, and `enable_thinking`; `minimax_model` applies when MiniMax is the target |
 | `model.codex_exec_*` | Codex path, sandbox, profile, SDK mode, reasoning, network/search, and approval policy |
 | `model.claude_code_exec_*` | Claude path, profile, SDK mode, effort, and thinking-token cap |
+| `model.cursor_exec_path` | Cursor Agent executable path; default `cursor-agent` |
+| `model.cursor_exec_sandbox` | Cursor sandbox mode: `enabled` (default) or `disabled`; file-edit rollouts require `enabled` |
 
 ## Training (`train`)
 
