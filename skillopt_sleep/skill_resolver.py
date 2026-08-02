@@ -12,8 +12,8 @@ existing managed-skill behavior instead of guessing.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from typing import List, Sequence
+from dataclasses import dataclass
+from typing import List, Sequence, Tuple
 
 SKILL_FILENAME = "SKILL.md"
 
@@ -30,7 +30,7 @@ class SkillResolution:
     name: str
     status: str
     path: str = ""
-    candidates: List[str] = field(default_factory=list)
+    candidates: Tuple[str, ...] = ()
     reason: str = ""
 
     @property
@@ -64,6 +64,14 @@ def normalize_skill_name(name: object) -> str:
     return candidate
 
 
+def _listdir(path: str) -> List[str]:
+    """Sorted directory entries, or [] when the directory is absent/unreadable."""
+    try:
+        return sorted(os.listdir(path))
+    except OSError:
+        return []
+
+
 def skill_search_roots(cfg: object) -> List[str]:
     """Documented local skill roots for a config: user skills, then plugin cache.
 
@@ -71,19 +79,21 @@ def skill_search_roots(cfg: object) -> List[str]:
     plugins expose theirs under ``<claude_home>/plugins/cache/*/*/skills``.
     Only existing directories are returned, in that fixed precedence order.
     """
-    claude_home = os.path.abspath(os.path.expanduser(str(getattr(cfg, "claude_home", ""))))
-    if not claude_home:
+    configured = str(getattr(cfg, "claude_home", "") or "").strip()
+    if not configured:
+        # Guard before abspath: os.path.abspath("") is the CWD, which would
+        # silently search a tree well outside the documented ~/.claude root.
         return []
+    claude_home = os.path.abspath(os.path.expanduser(configured))
     roots = [os.path.join(claude_home, "skills")]
 
     cache = os.path.join(claude_home, "plugins", "cache")
-    if os.path.isdir(cache):
-        for marketplace in sorted(os.listdir(cache)):
-            plugins_dir = os.path.join(cache, marketplace)
-            if not os.path.isdir(plugins_dir):
-                continue
-            for plugin in sorted(os.listdir(plugins_dir)):
-                roots.append(os.path.join(plugins_dir, plugin, "skills"))
+    for marketplace in _listdir(cache):
+        plugins_dir = os.path.join(cache, marketplace)
+        if not os.path.isdir(plugins_dir):
+            continue
+        for plugin in _listdir(plugins_dir):
+            roots.append(os.path.join(plugins_dir, plugin, "skills"))
     return [r for r in roots if os.path.isdir(r)]
 
 
@@ -100,7 +110,13 @@ def _contained_skill_file(root: str, name: str) -> str:
         return ""
     if not os.path.isfile(skill_file):
         return ""
-    if os.path.commonpath([real_root, skill_file]) != real_root:
+    try:
+        contained = os.path.commonpath([real_root, skill_file]) == real_root
+    except ValueError:
+        # Different drives / mixed path flavours (Windows): by definition the
+        # file is not inside this root, so refuse it rather than crash.
+        return ""
+    if not contained:
         return ""
     return skill_file
 
@@ -131,7 +147,9 @@ def resolve_skill(name: object, roots: Sequence[str]) -> SkillResolution:
         return SkillResolution(
             name=normalized,
             status=AMBIGUOUS,
-            candidates=matches,
+            candidates=tuple(matches),
             reason="several skill roots define this skill",
         )
-    return SkillResolution(name=normalized, status=FOUND, path=matches[0], candidates=matches)
+    return SkillResolution(
+        name=normalized, status=FOUND, path=matches[0], candidates=tuple(matches)
+    )

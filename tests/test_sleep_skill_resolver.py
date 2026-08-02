@@ -55,7 +55,7 @@ class TestResolveSkill(unittest.TestCase):
             res = resolve_skill("example-skill", [tmp])
             self.assertEqual(res.status, MISSING)
             self.assertEqual(res.path, "")
-            self.assertEqual(res.candidates, [])
+            self.assertEqual(res.candidates, ())
 
     def test_directory_without_skill_file_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -71,7 +71,7 @@ class TestResolveSkill(unittest.TestCase):
             self.assertEqual(res.status, AMBIGUOUS)
             self.assertEqual(res.path, "")
             self.assertEqual(res.candidates,
-                             [os.path.realpath(first), os.path.realpath(second)])
+                             (os.path.realpath(first), os.path.realpath(second)))
 
     def test_repeated_root_is_not_ambiguous(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -118,13 +118,39 @@ class TestResolveSkill(unittest.TestCase):
     def test_resolution_never_modifies_the_skill(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = _write_skill(tmp, "example-skill", "# original\n")
-            before = (os.stat(path).st_size, open(path, encoding="utf-8").read())
+            with open(path, encoding="utf-8") as f:
+                before = (os.stat(path).st_size, f.read())
             resolve_skill("example-skill", [tmp])
-            self.assertEqual((os.stat(path).st_size,
-                              open(path, encoding="utf-8").read()), before)
+            with open(path, encoding="utf-8") as f:
+                after = (os.stat(path).st_size, f.read())
+            self.assertEqual(after, before)
 
     def test_no_roots_is_missing(self):
         self.assertEqual(resolve_skill("example-skill", []).status, MISSING)
+
+    def test_candidates_are_an_immutable_tuple(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_skill(tmp, "example-skill")
+            res = resolve_skill("example-skill", [tmp])
+            self.assertIsInstance(res.candidates, tuple)
+            with self.assertRaises(AttributeError):
+                res.candidates.append("/injected")  # type: ignore[attr-defined]
+
+    def test_skill_file_on_another_drive_is_refused_not_crashed(self):
+        # os.path.commonpath raises ValueError for paths that share no root
+        # (mixed drives on Windows). Resolution must treat that as "outside".
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_skill(tmp, "example-skill")
+            real_commonpath = os.path.commonpath
+
+            def exploding_commonpath(paths):
+                raise ValueError("paths don't have the same drive")
+
+            os.path.commonpath = exploding_commonpath
+            try:
+                self.assertEqual(resolve_skill("example-skill", [tmp]).status, MISSING)
+            finally:
+                os.path.commonpath = real_commonpath
 
 
 class TestSkillSearchRoots(unittest.TestCase):
@@ -144,6 +170,30 @@ class TestSkillSearchRoots(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = load_config(claude_home=os.path.join(tmp, ".claude"))
             self.assertEqual(skill_search_roots(cfg), [])
+
+    def test_blank_claude_home_never_falls_back_to_the_cwd(self):
+        # os.path.abspath("") is the CWD; a blank override must not turn the
+        # working directory into a skill root.
+        class _Cfg:
+            def __init__(self, claude_home):
+                self.claude_home = claude_home
+
+        for blank in ["", "   ", None]:
+            self.assertEqual(skill_search_roots(_Cfg(blank)), [], repr(blank))
+
+    def test_unreadable_plugin_cache_does_not_break_discovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = os.path.join(tmp, ".claude")
+            skills = os.path.join(claude_home, "skills")
+            os.makedirs(skills)
+            cache = os.path.join(claude_home, "plugins", "cache")
+            os.makedirs(cache)
+            os.chmod(cache, 0o000)
+            try:
+                cfg = load_config(claude_home=claude_home)
+                self.assertEqual(skill_search_roots(cfg), [skills])
+            finally:
+                os.chmod(cache, 0o700)
 
     def test_resolution_through_config_roots_prefers_the_user_skill(self):
         with tempfile.TemporaryDirectory() as tmp:
