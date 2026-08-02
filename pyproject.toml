@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skillopt"
-version = "0.1.0"
+version = "0.2.0"
 description = "SkillOpt: Agentic Skill Optimization via Reflective Training Loops"
 readme = "README.md"
 license = {text = "MIT"}
@@ -68,9 +68,13 @@ Repository = "https://github.com/microsoft/SkillOpt"
 Issues = "https://github.com/microsoft/SkillOpt/issues"
 
 [tool.setuptools.packages.find]
-# skillopt* = the research package; skillopt_sleep = the open-source Sleep tool
-# (decoupled, zero dependency on the research code).
-include = ["skillopt", "skillopt.*", "skillopt_sleep", "skillopt_sleep.*", "scripts*"]
+# skillopt*      = the research package
+# skillopt_sleep = the open-source Sleep tool (decoupled, zero research dep)
+# skillopt_webui = the Gradio dashboard (installed via the `webui` extra)
+include = ["skillopt", "skillopt.*", "skillopt_sleep", "skillopt_sleep.*", "skillopt_webui", "skillopt_webui.*", "scripts*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md"]
 
 [tool.ruff]
 line-length = 120

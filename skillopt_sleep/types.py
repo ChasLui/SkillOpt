@@ -17,8 +17,8 @@ from typing import Any, Dict, List
 class SessionDigest:
     """A normalized summary of one local agent session transcript.
 
-    Produced by source-specific harvesters from Claude Code transcripts or
-    Codex Desktop archived sessions.
+    Produced by source-specific harvesters from Claude Code transcripts, Codex
+    Desktop archived sessions, or Cursor Agent transcripts.
     """
 
     session_id: str
@@ -29,6 +29,10 @@ class SessionDigest:
     user_prompts: List[str] = field(default_factory=list)
     assistant_finals: List[str] = field(default_factory=list)
     tools_used: List[str] = field(default_factory=list)
+    # Skill targets invoked through the Claude ``Skill`` tool, in first-seen
+    # order. Optional and default-empty: harvesters that do not observe skill
+    # invocations, and digests persisted before this field existed, leave it [].
+    skills_used: List[str] = field(default_factory=list)
     files_touched: List[str] = field(default_factory=list)
     feedback_signals: List[str] = field(default_factory=list)  # "still broken", "perfect", ...
     n_user_turns: int = 0
@@ -76,6 +80,10 @@ class TaskRecord:
     # allowed into val/test, which is the anti-overfitting guarantee.
     origin: str = "real"
     derived_from: str = ""            # for dream tasks: the real task id it varies
+    # Which skill this task exercised, when the source session invoked exactly
+    # one. Empty means unknown or ambiguous, which keeps the task in the
+    # existing managed-skill catch-all path. Kept last for positional compatibility.
+    skill_hint: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -138,6 +146,11 @@ class SleepReport:
     no_edits_reason: str = ""
     edits: List[EditRecord] = field(default_factory=list)
     rejected_edits: List[EditRecord] = field(default_factory=list)
+    # Proposed edits that changed nothing (anchor absent, duplicate/empty add,
+    # unknown op). They were never scored by the gate, so they belong in neither
+    # list above — without them a night can report no edits while the optimizer
+    # actually produced several.
+    unmatched_edits: List[EditRecord] = field(default_factory=list)
     tokens_used: int = 0
     notes: List[str] = field(default_factory=list)
 
