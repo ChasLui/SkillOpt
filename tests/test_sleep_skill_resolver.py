@@ -204,6 +204,83 @@ class TestSkillSearchRoots(unittest.TestCase):
             self.assertEqual(res.status, FOUND)
             self.assertEqual(res.path, os.path.realpath(expected))
 
+    def test_versioned_marketplace_layout_is_discovered(self):
+        # Sanitized mirror of a real marketplace install. Observed layout on a
+        # working machine: every plugin skills dir sits at
+        # <cache>/<marketplace>/<plugin>/<version>/skills — the unversioned
+        # layout did not occur at all, so discovery must handle this one.
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = os.path.join(tmp, ".claude")
+            cache = os.path.join(claude_home, "plugins", "cache")
+            expected = _write_skill(
+                os.path.join(cache, "claude-plugins-official", "superpowers", "5.0.7", "skills"),
+                "brainstorming",
+            )
+            cfg = load_config(claude_home=claude_home)
+            self.assertIn(
+                os.path.join(cache, "claude-plugins-official", "superpowers", "5.0.7", "skills"),
+                skill_search_roots(cfg),
+            )
+            res = resolve_skill("brainstorming", skill_search_roots(cfg))
+            self.assertEqual(res.status, FOUND)
+            self.assertEqual(res.path, os.path.realpath(expected))
+
+    def test_multiple_installed_versions_resolve_to_the_newest_not_ambiguous(self):
+        # A plugin upgraded in place keeps older version dirs alongside the new
+        # one (observed: three versions of the same plugin). Treating each as a
+        # peer root would make an ordinary upgrade resolve AMBIGUOUS.
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = os.path.join(tmp, ".claude")
+            plugin = os.path.join(claude_home, "plugins", "cache",
+                                  "claude-plugins-official", "chrome-devtools-mcp")
+            for version in ["1.1.1", "1.5.0", "1.6.0"]:
+                _write_skill(os.path.join(plugin, version, "skills"), "chrome-devtools")
+            newest = os.path.join(plugin, "1.6.0", "skills")
+
+            cfg = load_config(claude_home=claude_home)
+            roots = skill_search_roots(cfg)
+            self.assertEqual([r for r in roots if r.startswith(plugin)], [newest])
+
+            res = resolve_skill("chrome-devtools", roots)
+            self.assertEqual(res.status, FOUND)
+            self.assertEqual(res.path,
+                             os.path.realpath(os.path.join(newest, "chrome-devtools", "SKILL.md")))
+
+    def test_version_ordering_is_numeric_not_lexicographic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = os.path.join(tmp, ".claude")
+            plugin = os.path.join(claude_home, "plugins", "cache", "market", "plugin")
+            for version in ["1.9.0", "1.10.0"]:
+                _write_skill(os.path.join(plugin, version, "skills"), "example-skill")
+            cfg = load_config(claude_home=claude_home)
+            roots = [r for r in skill_search_roots(cfg) if r.startswith(plugin)]
+            # "1.10.0" < "1.9.0" as strings; it must still win as a version.
+            self.assertEqual(roots, [os.path.join(plugin, "1.10.0", "skills")])
+
+    def test_legacy_unversioned_layout_still_works(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = os.path.join(tmp, ".claude")
+            plugin = os.path.join(claude_home, "plugins", "cache", "market", "plugin")
+            expected = _write_skill(os.path.join(plugin, "skills"), "example-skill")
+            cfg = load_config(claude_home=claude_home)
+            self.assertIn(os.path.join(plugin, "skills"), skill_search_roots(cfg))
+            res = resolve_skill("example-skill", skill_search_roots(cfg))
+            self.assertEqual(res.status, FOUND)
+            self.assertEqual(res.path, os.path.realpath(expected))
+
+    def test_two_marketplaces_each_contribute_a_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = os.path.join(tmp, ".claude")
+            cache = os.path.join(claude_home, "plugins", "cache")
+            official = os.path.join(cache, "claude-plugins-official", "sentry", "1.0.0", "skills")
+            cognee = os.path.join(cache, "cognee", "cognee-memory", "1.0.0", "skills")
+            _write_skill(official, "sentry-skill")
+            _write_skill(cognee, "cognee-remember")
+            cfg = load_config(claude_home=claude_home)
+            roots = skill_search_roots(cfg)
+            self.assertIn(official, roots)
+            self.assertIn(cognee, roots)
+
     def test_legacy_target_skill_path_behavior_is_untouched(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = os.path.join(tmp, "repo", "SKILL.md")

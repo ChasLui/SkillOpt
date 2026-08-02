@@ -12,6 +12,7 @@ existing managed-skill behavior instead of guessing.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import List, Sequence, Tuple
 
@@ -72,12 +73,54 @@ def _listdir(path: str) -> List[str]:
         return []
 
 
+def _version_sort_key(name: str) -> tuple:
+    """Order version directory names newest-last, numerically where possible.
+
+    ``1.10.0`` must sort above ``1.9.0``, so numeric segments compare as ints.
+    Non-numeric segments (``2.0.0-beta``) compare as strings and sort below a
+    bare number at the same position, keeping prereleases under releases. The
+    name is the final tie-break so the order is always total and deterministic.
+    """
+    segments = []
+    for part in re.split(r"[._\-+]", name):
+        if part.isdigit():
+            segments.append((1, int(part), ""))
+        else:
+            segments.append((0, 0, part))
+    return (segments, name)
+
+
+def _plugin_skills_root(plugin_dir: str) -> str:
+    """The single skills root for one installed plugin, or "" if it has none.
+
+    Claude marketplace installs are versioned —
+    ``<plugin>/<version>/skills`` — and several versions of the same plugin can
+    be present at once. Returning each of them as a peer root would make an
+    ordinary upgraded plugin resolve AMBIGUOUS, so exactly one root is chosen:
+    the newest version, falling back to the legacy unversioned
+    ``<plugin>/skills`` layout when no version directory carries skills.
+    """
+    versioned = []
+    for entry in _listdir(plugin_dir):
+        candidate = os.path.join(plugin_dir, entry, "skills")
+        if os.path.isdir(candidate):
+            versioned.append((_version_sort_key(entry), candidate))
+    if versioned:
+        versioned.sort()
+        return versioned[-1][1]
+
+    legacy = os.path.join(plugin_dir, "skills")
+    return legacy if os.path.isdir(legacy) else ""
+
+
 def skill_search_roots(cfg: object) -> List[str]:
     """Documented local skill roots for a config: user skills, then plugin cache.
 
-    ``<claude_home>/skills`` holds hand-written skills; installed Claude Code
-    plugins expose theirs under ``<claude_home>/plugins/cache/*/*/skills``.
-    Only existing directories are returned, in that fixed precedence order.
+    ``<claude_home>/skills`` holds hand-written skills. Installed Claude Code
+    plugins expose theirs under the plugin cache, in either the versioned
+    marketplace layout ``plugins/cache/<marketplace>/<plugin>/<version>/skills``
+    or the legacy ``plugins/cache/<marketplace>/<plugin>/skills``. At most one
+    root per installed plugin is returned, in that fixed precedence order.
     """
     configured = str(getattr(cfg, "claude_home", "") or "").strip()
     if not configured:
@@ -93,7 +136,9 @@ def skill_search_roots(cfg: object) -> List[str]:
         if not os.path.isdir(plugins_dir):
             continue
         for plugin in _listdir(plugins_dir):
-            roots.append(os.path.join(plugins_dir, plugin, "skills"))
+            root = _plugin_skills_root(os.path.join(plugins_dir, plugin))
+            if root:
+                roots.append(root)
     return [r for r in roots if os.path.isdir(r)]
 
 
