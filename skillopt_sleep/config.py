@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 HOME_STATE_DIR = os.path.expanduser("~/.skillopt-sleep")
 CLAUDE_HOME = os.path.expanduser("~/.claude")
 CODEX_HOME = os.path.expanduser("~/.codex")
+PI_HOME = os.path.expanduser("~/.pi")
 CURSOR_HOME = os.path.expanduser("~/.cursor")
 
 
@@ -26,9 +27,12 @@ DEFAULTS: Dict[str, Any] = {
     # ── scope ──────────────────────────────────────────────────────────────
     "claude_home": CLAUDE_HOME,
     "codex_home": CODEX_HOME,
+    "pi_home": PI_HOME,
     "cursor_home": CURSOR_HOME,
     "vscode_workspace_storage": "",  # "" => auto-detect platform defaults
-    "transcript_source": "claude",  # "claude" | "codex" | "copilot" | "cursor" | "auto"
+    # Explicit sources also include copilot, cursor, and pi. ``auto`` keeps
+    # the established Codex-then-Claude precedence for backward compatibility.
+    "transcript_source": "claude",
     "projects": "invoked",        # "invoked" | "all" | [list of abs paths]
     "invoked_project": "",        # filled at runtime (cwd) when projects == "invoked"
     "lookback_hours": 72,         # harvest window when no prior sleep recorded
@@ -39,7 +43,7 @@ DEFAULTS: Dict[str, Any] = {
     "val_fraction": 0.34,         # real tasks reserved to gate updates
     "test_fraction": 0.0,         # real tasks reserved as the final held-out measure
     # ── optimizer ──────────────────────────────────────────────────────────
-    "backend": "mock",            # "mock" | "claude" | "codex" | "copilot" | "cursor"
+    "backend": "mock",            # "mock" | "claude" | "codex" | "copilot" | "cursor" | "pi"
     "model": "",                  # backend-specific; "" => backend default
     # Dual-backend split (both empty => single backend above plays all roles).
     # target = the model whose skill is deployed (runs `attempt` rollouts);
@@ -51,6 +55,7 @@ DEFAULTS: Dict[str, Any] = {
     "azure_endpoint": "",         # explicit endpoint for azure/compat backends
     "gate_mode": "on",            # "on" (validation-gated) | "off" (greedy, no hard filter)
     "codex_path": "",             # "" => auto-detect the real @openai/codex binary
+    "pi_path": "",                # "" => use `pi` on PATH
     "cursor_path": "",            # "" => auto-detect the Cursor Agent CLI
     "edit_budget": 4,             # textual learning rate (max edits/night)
     "preferences": "",            # free-text house rules injected into reflect as a prior
@@ -122,6 +127,11 @@ class SleepConfig:
     @property
     def codex_archived_sessions_dir(self) -> str:
         return os.path.join(self.data["codex_home"], "archived_sessions")
+
+    @property
+    def pi_sessions_dir(self) -> str:
+        pi_home = os.path.abspath(os.path.expanduser(str(self.data["pi_home"])))
+        return os.path.join(pi_home, "agent", "sessions")
 
     @property
     def cursor_projects_dir(self) -> str:

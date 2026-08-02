@@ -553,6 +553,145 @@ class CliBackend(Backend):
         return self._tokens
 
 
+# ── Pi CLI backend ────────────────────────────────────────────────
+
+
+class PiCliBackend(CliBackend):
+    """Drive an authenticated Pi coding-agent CLI in print mode.
+
+    pi (the pi coding agent) speaks the open Agent Skills standard and supports
+    a `-p` / `--print` headless mode, so it slots in alongside the claude/codex
+    CLI backends. Using pi here means the replay model is whatever the user has
+    configured in pi (e.g. `zai/glm-5.2`), keeping source and backend on the same
+    agent — which is the design intent of `--source pi`.
+    """
+
+    name = "pi"
+
+    def __init__(self, model: str = "", pi_path: str = "pi", timeout: int = 180) -> None:
+        super().__init__(model=model or os.environ.get("SKILLOPT_SLEEP_PI_MODEL", ""),
+                         timeout=timeout)
+        # npm installs Pi through a ``.cmd`` shim on Windows.  ``which`` honors
+        # PATHEXT there, while expanduser also makes an explicit ``~/bin/pi``
+        # work consistently on every platform.
+        import shutil
+
+        requested = os.path.expanduser(pi_path or "pi")
+        self.pi_path = shutil.which(requested) or requested
+
+    @staticmethod
+    def _stream_text(value: object) -> str:
+        """Normalize subprocess output, including TimeoutExpired byte streams."""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return str(value or "")
+
+    def _set_call_error(self, message: object) -> None:
+        import logging
+
+        from skillopt_sleep.staging import redact_secrets
+
+        text = self._stream_text(message)
+        self.last_call_error = str(redact_secrets(text)).strip()[:500]
+        logging.getLogger("skillopt_sleep").warning(
+            "Pi CLI call failed: %s", self.last_call_error
+        )
+
+    def _cached_call(self, key: str, prompt: str, *, max_tokens: int = 1024) -> str:
+        """Do not make a transient Pi failure sticky in the response cache."""
+        if key in self._cache:
+            # A cached success must not expose an unrelated previous failure
+            # through diagnostics/evidence attached to this call.
+            self.last_call_error = ""
+        out = super()._cached_call(key, prompt, max_tokens=max_tokens)
+        if not out:
+            self._cache.pop(key, None)
+        return out
+
+    def _call(self, prompt: str, *, max_tokens: int = 1024) -> str:
+        # Keep credentials/model settings available, but exclude ambient agent
+        # behavior from replay: disable tools and discoverable resources, force
+        # Pi's built-in system prompt, suppress APPEND_SYSTEM.md, and run from a
+        # clean cwd.  (``--no-context-files`` alone only disables AGENTS.md and
+        # CLAUDE.md; it does not disable global SYSTEM.md/APPEND_SYSTEM.md.)
+        #   --no-tools             no tool use during replay
+        #   --no-skills            do not load the user's installed skills
+        #   --no-context-files     do not load AGENTS.md/CLAUDE.md
+        #   --no-session           ephemeral; do not write to session history
+        #   --no-extensions        skip extension discovery
+        import shutil
+
+        self.last_call_error = ""
+        cmd = [self.pi_path, "-p", "--no-session"]
+        cmd += [
+            "--no-tools",
+            "--no-skills",
+            "--no-context-files",
+            "--no-extensions",
+            "--no-prompt-templates",
+            "--no-themes",
+            # An explicit empty custom prompt falls back to Pi's built-in
+            # prompt while preventing discovery of ~/.pi/agent/SYSTEM.md.
+            "--system-prompt",
+            "",
+            # Suppress discovery of ~/.pi/agent/APPEND_SYSTEM.md.
+            "--append-system-prompt",
+            "",
+        ]
+        if self.model:
+            cmd += ["--model", self.model]
+        clean_cwd = tempfile.mkdtemp(prefix="skillopt_sleep_pi_")
+        env = os.environ.copy()
+        # A replay should contact the selected model provider, not Pi's update
+        # or install-telemetry endpoints during startup.
+        env["PI_OFFLINE"] = "1"
+        env["PI_SKIP_VERSION_CHECK"] = "1"
+        env["PI_TELEMETRY"] = "0"
+        try:
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    input=prompt,
+                    capture_output=True,
+                    creationflags=_NO_WINDOW,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=self.timeout,
+                    cwd=clean_cwd,
+                    env=env,
+                )
+            except subprocess.TimeoutExpired as exc:
+                detail = ""
+                if exc.stderr:
+                    detail = f": {self._stream_text(exc.stderr)}"
+                self._set_call_error(f"Pi CLI timed out after {self.timeout}s{detail}")
+                return ""
+            except Exception as exc:
+                self._set_call_error(f"Pi CLI failed to start: {exc}")
+                return ""
+        finally:
+            try:
+                shutil.rmtree(clean_cwd, ignore_errors=True)
+            except Exception:
+                pass
+        out = self._stream_text(proc.stdout).strip()
+        stderr = self._stream_text(proc.stderr).strip()
+        if proc.returncode != 0:
+            # Never let stdout from a failed child masquerade as a model
+            # answer; some CLIs print diagnostics to stdout.
+            detail = stderr or out or "no diagnostic output"
+            self._set_call_error(f"Pi CLI exited {proc.returncode}: {detail}")
+            return ""
+        if not out:
+            # A zero exit status is not a usable model response.  Preserve any
+            # stderr diagnostic for operators, but never return it as an answer.
+            detail = f": {stderr}" if stderr else ""
+            self._set_call_error(f"Pi CLI returned an empty response{detail}")
+            return ""
+        return out
+
+
 # ── Claude Code CLI backend ───────────────────────────────────────────────────
 
 class ClaudeCliBackend(CliBackend):
@@ -1821,11 +1960,14 @@ def get_backend(
     model: str = "",
     claude_path: str = "claude",
     codex_path: str = "",
+    pi_path: str = "",
     cursor_path: str = "",
     azure_endpoint: str = "",
     project_dir: str = "",
 ) -> Backend:
     n = (name or "mock").strip().lower()
+    if n in {"pi", "pi_cli", "pi_coding_agent", "pi-coding-agent"}:
+        return PiCliBackend(model=model, pi_path=pi_path or "pi")
     if n in {"claude", "anthropic", "claude_cli", "claude_code"}:
         return ClaudeCliBackend(model=model, claude_path=claude_path)
     if n in {"codex", "codex_cli", "openai_codex"}:
@@ -1858,6 +2000,7 @@ def build_backend(
     target_backend: str = "",
     target_model: str = "",
     codex_path: str = "",
+    pi_path: str = "",
     cursor_path: str = "",
     azure_endpoint: str = "",
     preferences: str = "",
@@ -1876,6 +2019,7 @@ def build_backend(
             backend,
             model=model,
             codex_path=codex_path,
+            pi_path=pi_path,
             cursor_path=cursor_path,
             azure_endpoint=azure_endpoint,
             project_dir=project_dir,
@@ -1883,10 +2027,12 @@ def build_backend(
         be.preferences = preferences
         return be
     tgt = get_backend(target_backend or backend, model=target_model or model,
-                      codex_path=codex_path, cursor_path=cursor_path, azure_endpoint=azure_endpoint,
+                      codex_path=codex_path, pi_path=pi_path, cursor_path=cursor_path,
+                      azure_endpoint=azure_endpoint,
                       project_dir=project_dir)
     opt = get_backend(optimizer_backend or backend, model=optimizer_model or model,
-                      codex_path=codex_path, cursor_path=cursor_path, azure_endpoint=azure_endpoint,
+                      codex_path=codex_path, pi_path=pi_path, cursor_path=cursor_path,
+                      azure_endpoint=azure_endpoint,
                       project_dir=project_dir)
     opt.preferences = preferences  # reflect runs on the optimizer
     dual = DualBackend(target=tgt, optimizer=opt)

@@ -102,6 +102,23 @@ def test_model_key_resolution_failure_uses_safe_config_fallback(monkeypatch) -> 
     )
 
 
+def test_model_key_forwards_pi_executable_path(monkeypatch) -> None:
+    cycle_module = importlib.import_module("skillopt_sleep.cycle")
+    captured = {}
+
+    real_build = cycle_module.build_backend
+
+    def capture_without_recursion(**kwargs):
+        captured.update(kwargs)
+        return real_build(backend="mock")
+
+    monkeypatch.setattr(cycle_module, "build_backend", capture_without_recursion)
+    cfg = load_config(backend="pi", pi_path="/opt/custom/pi")
+
+    assert cycle_module._make_model_key(cfg) == "mock::"
+    assert captured["pi_path"] == "/opt/custom/pi"
+
+
 def test_legacy_unresolved_model_key_migrates_without_false_warning(
     tmp_path, capsys
 ) -> None:
