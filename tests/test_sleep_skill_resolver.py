@@ -29,6 +29,20 @@ def _write_skill(root, name, body="# skill\n"):
     return path
 
 
+def _symlink(test, source, link_name):
+    """Create a symlink, or skip the test where the platform refuses one.
+
+    Windows needs admin or Developer Mode for symlinks, and some CI sandboxes
+    disallow them outright. The behaviour under test is a security property
+    that only exists where symlinks do, so skipping is correct rather than
+    failing on an unrelated platform limitation.
+    """
+    try:
+        os.symlink(source, link_name)
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        test.skipTest(f"symlinks unavailable on this platform: {exc}")
+
+
 class TestNormalizeSkillName(unittest.TestCase):
     def test_trims_but_preserves_case_and_punctuation(self):
         self.assertEqual(normalize_skill_name("  Brand-Voice.v2  "), "Brand-Voice.v2")
@@ -93,8 +107,8 @@ class TestResolveSkill(unittest.TestCase):
             os.makedirs(root)
             outside = os.path.join(tmp, "outside")
             _write_skill(outside, "example-skill")
-            os.symlink(os.path.join(outside, "example-skill"),
-                       os.path.join(root, "example-skill"))
+            _symlink(self, os.path.join(outside, "example-skill"),
+                     os.path.join(root, "example-skill"))
             self.assertEqual(resolve_skill("example-skill", [root]).status, MISSING)
 
     def test_symlinked_skill_file_escaping_the_root_is_refused(self):
@@ -104,7 +118,7 @@ class TestResolveSkill(unittest.TestCase):
             elsewhere = os.path.join(tmp, "elsewhere.md")
             with open(elsewhere, "w", encoding="utf-8") as f:
                 f.write("# not in the root\n")
-            os.symlink(elsewhere, os.path.join(root, "example-skill", "SKILL.md"))
+            _symlink(self, elsewhere, os.path.join(root, "example-skill", "SKILL.md"))
             self.assertEqual(resolve_skill("example-skill", [root]).status, MISSING)
 
     def test_symlinked_root_itself_still_resolves(self):
@@ -112,7 +126,7 @@ class TestResolveSkill(unittest.TestCase):
             real = os.path.join(tmp, "real")
             _write_skill(real, "example-skill")
             link = os.path.join(tmp, "link")
-            os.symlink(real, link)
+            _symlink(self, real, link)
             self.assertEqual(resolve_skill("example-skill", [link]).status, FOUND)
 
     def test_resolution_never_modifies_the_skill(self):
@@ -188,12 +202,23 @@ class TestSkillSearchRoots(unittest.TestCase):
             os.makedirs(skills)
             cache = os.path.join(claude_home, "plugins", "cache")
             os.makedirs(cache)
-            os.chmod(cache, 0o000)
+            try:
+                os.chmod(cache, 0o000)
+            except OSError as exc:  # pragma: no cover - platform dependent
+                self.skipTest(f"cannot drop permissions on this platform: {exc}")
+            if os.access(cache, os.R_OK):
+                # Windows and some filesystems ignore mode bits, and root
+                # bypasses them, so the unreadable precondition never holds.
+                os.chmod(cache, 0o700)
+                self.skipTest("directory is still readable after chmod 000")
             try:
                 cfg = load_config(claude_home=claude_home)
                 self.assertEqual(skill_search_roots(cfg), [skills])
             finally:
-                os.chmod(cache, 0o700)
+                try:
+                    os.chmod(cache, 0o700)
+                except OSError:  # pragma: no cover - best-effort restore
+                    pass
 
     def test_resolution_through_config_roots_prefers_the_user_skill(self):
         with tempfile.TemporaryDirectory() as tmp:
