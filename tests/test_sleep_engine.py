@@ -19,7 +19,13 @@ from skillopt_sleep.cycle import run_sleep_cycle
 from skillopt_sleep.experiments.personas import programmer_persona, researcher_persona
 from skillopt_sleep.harvest import _detect_feedback, _is_meta_prompt, digest_transcript
 from skillopt_sleep.memory import apply_edits, current_learned_lines, extract_learned, set_learned
-from skillopt_sleep.mine import assign_splits, filter_tasks_for_target, heuristic_mine, mine
+from skillopt_sleep.mine import (
+    assign_splits,
+    filter_tasks_for_target,
+    group_tasks_by_skill_hint,
+    heuristic_mine,
+    mine,
+)
 from skillopt_sleep.staging import adopt
 from skillopt_sleep.types import EditRecord, SessionDigest, SleepReport, TaskRecord
 
@@ -2250,6 +2256,82 @@ class TestDiagnosticsRedaction(unittest.TestCase):
         joined = "\n".join(cm.output)
         self.assertNotIn(secret, joined, "raw token leaked into the log line")
         self.assertIn("REDACTED", joined)
+
+
+class TestGroupTasksBySkillHint(unittest.TestCase):
+    MANAGED = "managed-skill"
+
+    def _task(self, tid, hint="", session="s1", outcome="unknown"):
+        return TaskRecord(
+            id=tid, project="/repo/example", intent="intent " + tid,
+            skill_hint=hint, source_sessions=[session], outcome=outcome,
+        )
+
+    def _ids(self, groups):
+        return {name: [t.id for t in tasks] for name, tasks in groups.items()}
+
+    def test_group_tasks_by_skill_hint_empty_input(self):
+        self.assertEqual(group_tasks_by_skill_hint([], self.MANAGED), {})
+
+    def test_group_tasks_by_skill_hint_legacy_tasks_go_to_managed_skill(self):
+        groups = group_tasks_by_skill_hint(
+            [self._task("t1"), self._task("t2")], self.MANAGED
+        )
+        self.assertEqual(self._ids(groups), {self.MANAGED: ["t1", "t2"]})
+
+    def test_group_tasks_by_skill_hint_blank_hint_goes_to_managed_skill(self):
+        groups = group_tasks_by_skill_hint([self._task("t1", "   ")], self.MANAGED)
+        self.assertEqual(self._ids(groups), {self.MANAGED: ["t1"]})
+
+    def test_group_tasks_by_skill_hint_preserves_first_seen_order(self):
+        groups = group_tasks_by_skill_hint(
+            [
+                self._task("t1", "alpha"),
+                self._task("t2", "beta"),
+                self._task("t3", "alpha"),
+                self._task("t4"),
+            ],
+            self.MANAGED,
+        )
+        self.assertEqual(list(groups), ["alpha", "beta", self.MANAGED])
+        self.assertEqual(
+            self._ids(groups),
+            {"alpha": ["t1", "t3"], "beta": ["t2"], self.MANAGED: ["t4"]},
+        )
+
+    def test_group_tasks_by_skill_hint_merges_duplicate_ids_once(self):
+        groups = group_tasks_by_skill_hint(
+            [
+                self._task("t1", "alpha", session="s1"),
+                self._task("t2", "beta"),
+                self._task("t1", "alpha", session="s2", outcome="success"),
+            ],
+            self.MANAGED,
+        )
+        self.assertEqual(self._ids(groups), {"alpha": ["t1"], "beta": ["t2"]})
+        merged = groups["alpha"][0]
+        self.assertEqual(merged.source_sessions, ["s1", "s2"])
+        self.assertEqual(merged.outcome, "success")
+
+    def test_group_tasks_by_skill_hint_conflicting_hints_go_to_managed_skill(self):
+        groups = group_tasks_by_skill_hint(
+            [self._task("t1", "alpha"), self._task("t1", "beta", session="s2")],
+            self.MANAGED,
+        )
+        self.assertEqual(self._ids(groups), {self.MANAGED: ["t1"]})
+
+    def test_group_tasks_by_skill_hint_partial_hint_evidence_goes_to_managed_skill(self):
+        groups = group_tasks_by_skill_hint(
+            [self._task("t1", "alpha"), self._task("t1", session="s2")],
+            self.MANAGED,
+        )
+        self.assertEqual(self._ids(groups), {self.MANAGED: ["t1"]})
+
+    def test_group_tasks_by_skill_hint_hint_equal_to_managed_skill_is_one_group(self):
+        groups = group_tasks_by_skill_hint(
+            [self._task("t1", self.MANAGED), self._task("t2")], self.MANAGED
+        )
+        self.assertEqual(self._ids(groups), {self.MANAGED: ["t1", "t2"]})
 
 
 if __name__ == "__main__":
