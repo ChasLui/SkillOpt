@@ -13,7 +13,7 @@ Common flags:
     --max-tasks N       cap mined tasks per run
     --target-skill-path PATH explicit live SKILL.md to stage/adopt
     --tasks-file PATH   reviewed TaskRecord JSON file to replay instead of harvesting
-    --backend mock|claude|codex|copilot|cursor|pi|handoff
+    --backend mock|claude|codex|copilot|cursor|pi|handoff|azure_openai
     --source claude|codex|copilot|cursor|pi|auto
     --vscode-workspace-storage PATH
     --model NAME
