@@ -2282,6 +2282,7 @@ class TestGroupTasksBySkillHint(unittest.TestCase):
     def test_group_tasks_by_skill_hint_blank_hint_goes_to_managed_skill(self):
         groups = group_tasks_by_skill_hint([self._task("t1", "   ")], self.MANAGED)
         self.assertEqual(self._ids(groups), {self.MANAGED: ["t1"]})
+        self.assertEqual(groups[self.MANAGED][0].skill_hint, "")
 
     def test_group_tasks_by_skill_hint_preserves_first_seen_order(self):
         groups = group_tasks_by_skill_hint(
@@ -2300,11 +2301,13 @@ class TestGroupTasksBySkillHint(unittest.TestCase):
         )
 
     def test_group_tasks_by_skill_hint_merges_duplicate_ids_once(self):
+        first = self._task("t1", "alpha", session="s1")
+        duplicate = self._task("t1", "alpha", session="s2", outcome="success")
         groups = group_tasks_by_skill_hint(
             [
-                self._task("t1", "alpha", session="s1"),
+                first,
                 self._task("t2", "beta"),
-                self._task("t1", "alpha", session="s2", outcome="success"),
+                duplicate,
             ],
             self.MANAGED,
         )
@@ -2312,6 +2315,21 @@ class TestGroupTasksBySkillHint(unittest.TestCase):
         merged = groups["alpha"][0]
         self.assertEqual(merged.source_sessions, ["s1", "s2"])
         self.assertEqual(merged.outcome, "success")
+        self.assertIsNot(merged, first)
+        self.assertEqual(first.source_sessions, ["s1"])
+        self.assertEqual(first.outcome, "unknown")
+        self.assertEqual(duplicate.source_sessions, ["s2"])
+
+    def test_group_tasks_by_skill_hint_normalizes_without_mutating_inputs(self):
+        first = self._task("t1", " alpha ", session="s1")
+        duplicate = self._task("t1", "alpha", session="s2")
+
+        groups = group_tasks_by_skill_hint([first, duplicate], self.MANAGED)
+
+        self.assertEqual(self._ids(groups), {"alpha": ["t1"]})
+        self.assertEqual(groups["alpha"][0].skill_hint, "alpha")
+        self.assertEqual(first.skill_hint, " alpha ")
+        self.assertEqual(duplicate.skill_hint, "alpha")
 
     def test_group_tasks_by_skill_hint_conflicting_hints_go_to_managed_skill(self):
         groups = group_tasks_by_skill_hint(
@@ -2326,6 +2344,7 @@ class TestGroupTasksBySkillHint(unittest.TestCase):
             self.MANAGED,
         )
         self.assertEqual(self._ids(groups), {self.MANAGED: ["t1"]})
+        self.assertEqual(groups[self.MANAGED][0].skill_hint, "")
 
     def test_group_tasks_by_skill_hint_hint_equal_to_managed_skill_is_one_group(self):
         groups = group_tasks_by_skill_hint(

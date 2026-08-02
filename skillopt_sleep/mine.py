@@ -18,6 +18,7 @@ import hashlib
 import os
 import re
 from collections import Counter
+from dataclasses import replace
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from skillopt_sleep.backend import CursorBackendError
@@ -254,10 +255,16 @@ def group_tasks_by_skill_hint(
     for t in tasks:
         observed.setdefault(t.id, set()).add((t.skill_hint or "").strip())
 
+    # ``dedup_tasks`` merges records in place, so operate on shallow dataclass
+    # copies (including the only list it mutates) rather than caller-owned tasks.
+    copied = [replace(t, source_sessions=list(t.source_sessions)) for t in tasks]
     groups: Dict[str, List[TaskRecord]] = {}
-    for task in dedup_tasks(tasks):
+    for task in dedup_tasks(copied):
         hints = observed[task.id]
         hint = next(iter(hints)) if len(hints) == 1 else ""
+        # Keep the returned record aligned with the normalized evidence used for
+        # routing. In particular, blank and partially observed hints stay empty.
+        task.skill_hint = hint
         groups.setdefault(hint or managed_skill_name, []).append(task)
     return groups
 
