@@ -55,10 +55,17 @@ def consolidate_groups(
 ) -> Dict[str, GroupConsolidation]:
     """Consolidate each group independently, in order, isolating failures.
 
-    Returns one entry per input group, keyed by skill name and ordered
-    first-seen. A group is ``skipped`` when it is unusable (blank name, no
-    tasks, repeated name) and ``failed`` when its own consolidation raised; both
-    leave every other group's decision untouched.
+    Returns one entry per distinct skill name, keyed by that name and ordered
+    first-seen — at most one entry per input group, not exactly one. The result
+    is keyed by name, so a repeated name structurally cannot carry a second
+    outcome: the first group under a name wins and later ones are dropped
+    without an entry of their own. Every blank name likewise collapses into the
+    single ``""`` entry. Callers needing a decision for every input must pass
+    distinct, non-blank names.
+
+    A group is ``skipped`` when it is unusable (blank name, or no tasks) and
+    ``failed`` when its own consolidation raised; both leave every other
+    group's decision untouched.
 
     ``memory`` is the shared agent memory and is passed through read-only: group
     runs evolve skills only, so no group can rewrite another group's memory.

@@ -106,6 +106,25 @@ class TestConsolidateGroups(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertIn("# first", calls[0])
 
+    def test_result_is_keyed_by_name_so_it_can_hold_fewer_entries_than_groups(self):
+        # The result is keyed by skill name, so repeated and blank names cannot
+        # each carry their own outcome. Pinned because the contract is "at most
+        # one entry per input group", not "exactly one".
+        outcomes = consolidate_groups(
+            MockBackend(),
+            [
+                SkillGroup("research-skill", set_learned("", []), _tasks(researcher_persona)),
+                SkillGroup("research-skill", set_learned("", []), _tasks(researcher_persona)),
+                SkillGroup("", set_learned("", []), _tasks(researcher_persona)),
+                SkillGroup("   ", set_learned("", []), _tasks(researcher_persona)),
+            ],
+            edit_budget=4, night=1,
+        )
+        self.assertEqual(sorted(outcomes), ["", "research-skill"])
+        self.assertLess(len(outcomes), 4)
+        # Both blank names collapse into the single "" entry, reported skipped.
+        self.assertEqual(outcomes[""].status, SKIPPED)
+
     def test_one_failing_group_is_isolated_and_reported(self):
         def _fake(backend, tasks, skill, memory, **kwargs):
             if "boom" in skill:
