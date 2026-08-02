@@ -76,18 +76,22 @@ def _listdir(path: str) -> List[str]:
 def _version_sort_key(name: str) -> tuple:
     """Order version directory names newest-last, numerically where possible.
 
-    ``1.10.0`` must sort above ``1.9.0``, so numeric segments compare as ints.
-    Non-numeric segments (``2.0.0-beta``) compare as strings and sort below a
-    bare number at the same position, keeping prereleases under releases. The
-    name is the final tie-break so the order is always total and deterministic.
+    ``1.10.0`` must sort above ``1.9.0``, so the leading numeric segments
+    compare as ints rather than as strings. Anything after the first
+    non-numeric segment is a prerelease suffix (``2.0.0-beta``), and a bare
+    release outranks any prerelease sharing its numeric prefix — comparing the
+    segment lists alone would do the opposite, because a shorter list that is a
+    prefix of a longer one sorts lower. The name is the final tie-break so the
+    order is always total and deterministic.
     """
-    segments = []
+    numeric: List[int] = []
+    suffix: List[str] = []
     for part in re.split(r"[._\-+]", name):
-        if part.isdigit():
-            segments.append((1, int(part), ""))
+        if part.isdigit() and not suffix:
+            numeric.append(int(part))
         else:
-            segments.append((0, 0, part))
-    return (segments, name)
+            suffix.append(part)
+    return (numeric, 0 if suffix else 1, suffix, name)
 
 
 def _plugin_skills_root(plugin_dir: str) -> str:

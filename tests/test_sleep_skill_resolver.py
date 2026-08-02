@@ -257,6 +257,28 @@ class TestSkillSearchRoots(unittest.TestCase):
             # "1.10.0" < "1.9.0" as strings; it must still win as a version.
             self.assertEqual(roots, [os.path.join(plugin, "1.10.0", "skills")])
 
+    def test_stable_release_beats_an_installed_prerelease(self):
+        # Segment lists alone would rank 2.0.0-beta above 2.0.0, because a
+        # shorter list that prefixes a longer one sorts lower. A prerelease
+        # must never be preferred over the stable release it precedes.
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = os.path.join(tmp, ".claude")
+            plugin = os.path.join(claude_home, "plugins", "cache", "market", "plugin")
+            for version in ["2.0.0", "2.0.0-beta"]:
+                _write_skill(os.path.join(plugin, version, "skills"), "example-skill")
+            cfg = load_config(claude_home=claude_home)
+            roots = [r for r in skill_search_roots(cfg) if r.startswith(plugin)]
+            self.assertEqual(roots, [os.path.join(plugin, "2.0.0", "skills")])
+
+    def test_version_key_orders_release_forms_sensibly(self):
+        from skillopt_sleep.skill_resolver import _version_sort_key as key
+        self.assertGreater(key("2.0.0"), key("2.0.0-beta"))
+        self.assertGreater(key("1.10.0"), key("1.9.0"))
+        self.assertGreater(key("2.0.0-beta"), key("2.0.0-alpha"))
+        self.assertGreater(key("1.0.0"), key("1.0"))
+        self.assertGreater(key("1.0.0"), key("1.0.0rc1"))
+        self.assertGreater(key("1.0.0"), key("main"))
+
     def test_legacy_unversioned_layout_still_works(self):
         with tempfile.TemporaryDirectory() as tmp:
             claude_home = os.path.join(tmp, ".claude")
