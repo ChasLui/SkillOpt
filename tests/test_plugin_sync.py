@@ -4,6 +4,8 @@ Run: python3 -m pytest tests/test_plugin_sync.py -v
 """
 import json
 import os
+import subprocess
+import sys
 import unittest
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -107,11 +109,39 @@ class TestPluginParity(unittest.TestCase):
 
     def test_openclaw_wrapper_matches_shared_backend_signature(self):
         text = _read(OPENCLAW_RUNNER)
+        self.assertIn('claude_path="claude"', text)
+        self.assertIn('pi_path=""', text)
         self.assertIn('cursor_path=""', text)
+        self.assertIn('azure_endpoint=""', text)
         self.assertIn('project_dir=""', text)
+        self.assertIn("claude_path=claude_path", text)
+        self.assertIn("pi_path=pi_path", text)
         self.assertIn("cursor_path=cursor_path", text)
+        self.assertIn("azure_endpoint=azure_endpoint", text)
         self.assertIn("project_dir=project_dir", text)
         self.assertNotIn("**kwargs", text)
+
+        script = f"""
+import runpy
+import sys
+sys.path.insert(0, {os.path.dirname(OPENCLAW_RUNNER)!r})
+runpy.run_path({OPENCLAW_RUNNER!r}, run_name="openclaw_runner_test")
+from skillopt_sleep.backend import build_backend
+backend = build_backend(
+    backend="mock",
+    pi_path="unused-pi",
+    azure_endpoint="https://unused.invalid",
+)
+assert backend.name == "mock", backend.name
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_all_skill_mds_mention_all_backends(self):
         for name, path in PLUGIN_SKILL_MDS.items():

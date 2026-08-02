@@ -599,6 +599,10 @@ class PiCliBackend(CliBackend):
 
     def _cached_call(self, key: str, prompt: str, *, max_tokens: int = 1024) -> str:
         """Do not make a transient Pi failure sticky in the response cache."""
+        if key in self._cache:
+            # A cached success must not expose an unrelated previous failure
+            # through diagnostics/evidence attached to this call.
+            self.last_call_error = ""
         out = super()._cached_call(key, prompt, max_tokens=max_tokens)
         if not out:
             self._cache.pop(key, None)
@@ -640,6 +644,7 @@ class PiCliBackend(CliBackend):
         env = os.environ.copy()
         # A replay should contact the selected model provider, not Pi's update
         # or install-telemetry endpoints during startup.
+        env["PI_OFFLINE"] = "1"
         env["PI_SKIP_VERSION_CHECK"] = "1"
         env["PI_TELEMETRY"] = "0"
         try:

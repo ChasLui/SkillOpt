@@ -4,8 +4,9 @@
 > include the generic research `openai_compatible` backend, Sleep handoff,
 > Sleep support for non-Azure OpenAI-compatible endpoints, the Sleep
 > `--preferences` flag, the research `cursor_exec` target harness, or Cursor
-> source/backend/plugin support or VS Code Copilot transcript harvesting; use
-> a source install from `main` for those features until the next release.
+> source/backend/plugin support, Pi source/backend support, or VS Code Copilot
+> transcript harvesting; use a source install from `main` for those features
+> until the next release.
 
 ## Training
 
@@ -128,12 +129,14 @@ Actions are `run`, `dry-run`, `status`, `adopt`, `harvest`, `schedule`, and
 |---|---|
 | `--project PATH` | Project used for transcript scope, targets, state, and staging (default: current directory) |
 | `--scope invoked\|all` | Harvest this project or all projects |
-| `--source claude\|codex\|copilot\|cursor\|auto` | Transcript source; `auto` keeps Codex-then-Claude precedence and does not select Copilot or Cursor |
-| `--backend mock\|claude\|codex\|copilot\|cursor\|handoff\|azure_openai` | Replay/optimizer backend |
+| `--source claude\|codex\|copilot\|cursor\|pi\|auto` | Transcript source; `auto` keeps Codex-then-Claude precedence and does not select Copilot, Cursor, or Pi |
+| `--backend mock\|claude\|codex\|copilot\|cursor\|pi\|handoff\|azure_openai` | Replay/optimizer backend |
 | `--model NAME` | Backend-specific model override |
 | `--cursor-home PATH` | Override `~/.cursor` for Cursor transcript harvesting |
+| `--pi-home PATH` | Parent directory containing Pi's `agent/sessions` tree (default: `~/.pi`) |
 | `--vscode-workspace-storage PATH` | Override VS Code's `User/workspaceStorage` root for Copilot transcript harvesting |
 | `--cursor-path PATH` | Path to the installed Cursor Agent CLI |
+| `--pi-path PATH` | Path to the installed Pi coding-agent CLI |
 | `--preferences TEXT` | House rules supplied to reflection |
 | `--lookback-hours N` | Initial transcript lookback; `0` scans all history |
 | `--max-sessions N` / `--max-tasks N` | Bound the harvested workload |
@@ -142,6 +145,11 @@ Actions are `run`, `dry-run`, `status`, `adopt`, `harvest`, `schedule`, and
 | `--edit-budget N` | Maximum bounded edits for the night |
 | `--progress` / `--json` | Progress or machine-readable output |
 | `--auto-adopt` | Apply an accepted staged proposal automatically |
+
+The `mock` and `handoff` backends make no network calls. A real backend sends
+mining, replay, judging, and reflection prompts derived from harvested
+transcripts and tasks to its selected provider. Review that provider's
+data-retention and privacy policy before processing sensitive sessions.
 
 ### VS Code GitHub Copilot Chat source
 
@@ -166,6 +174,44 @@ The managed `schedule` command does not persist `--source` or
 `"transcript_source": "copilot"` and, when needed,
 `"vscode_workspace_storage": "/absolute/path/to/workspaceStorage"` in
 `~/.skillopt-sleep/config.json`.
+
+### Pi source and backend
+
+`--source pi` reads local session JSONL files below
+`~/.pi/agent/sessions`; use `--pi-home PATH` to select the parent directory that
+contains `agent/sessions`. This local source does not require the Pi CLI or
+provider authentication. It retains user/assistant text, tool names, and lexical
+feedback found in user text, while excluding thinking, tool arguments, tool
+outputs, images, and unrelated metadata. The absolute project `cwd` from the
+session header is retained for scope filtering and may appear in miner prompts
+sent to a real backend and its provider. Known secret-shaped strings in retained
+message text are redacted as defense in depth, not as a guarantee. Pi is an explicit source: `--source auto`
+retains Codex-then-Claude precedence and does not select it.
+
+Transcript source and model backend are independent. `--backend pi` launches a
+locally installed, authenticated Pi CLI and makes real provider calls for
+mining, replay, judging, and reflection. Use `--pi-path PATH` to select its
+executable and `--model NAME` to override its configured model:
+
+```bash
+skillopt-sleep run --project "$(pwd)" \
+  --source pi --backend pi --pi-path /absolute/path/to/pi \
+  --model provider/model --max-sessions 5 --max-tasks 3 --progress
+```
+
+For these calls, SkillOpt disables Pi tools, skills, context files, extensions,
+prompt templates, themes, and session writes. Pi authentication and model
+configuration remain available. It also enables Pi's offline startup mode, so
+configured npm/git packages are not installed or updated and model catalogs are
+not refreshed; the selected model provider is still contacted for generation.
+These controls should not be treated as permanent or complete isolation. The
+provider selected in Pi receives the transcript-derived prompts.
+
+The managed `schedule` command preserves the backend but not `--source`,
+`--pi-home`, `--pi-path`, or `--model`. Before scheduling Pi, put
+`transcript_source`, `pi_home`, `pi_path`, and `model` in
+`~/.skillopt-sleep/config.json`; use an absolute `pi_path` and verify
+authentication for the scheduled account.
 
 ### Cursor source and backend
 
