@@ -5,6 +5,8 @@ Run:  python -m pytest tests/test_sleep_multi_skill.py
 """
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
 
 from skillopt_sleep.backend import MockBackend
@@ -177,17 +179,42 @@ class TestConsolidateGroups(unittest.TestCase):
         self.assertFalse(outcomes["failed"].accepted)
 
     def test_consolidating_groups_writes_no_files(self):
-        import os
-        import tempfile
-
+        # Run with the CWD *inside* the watched directory. Listing a temp dir
+        # the call never hears about proves nothing: it compares an empty
+        # directory to itself and passes even when files land in the real CWD.
+        # Adoption is explicit, so a consolidation run must write nothing.
+        original_cwd = os.getcwd()
         with tempfile.TemporaryDirectory() as tmp:
-            before = sorted(os.listdir(tmp))
-            consolidate_groups(
-                MockBackend(),
-                [SkillGroup("research-skill", set_learned("", []), _tasks(researcher_persona))],
-                edit_budget=4, night=1,
-            )
-            self.assertEqual(sorted(os.listdir(tmp)), before)
+            os.chdir(tmp)
+            try:
+                # realpath: macOS hands out /var/... which resolves to /private/var/...
+                watched = os.path.realpath(tmp)
+                before = sorted(os.listdir(watched))
+                self.assertEqual(before, [], "fixture should start empty")
+                consolidate_groups(
+                    MockBackend(),
+                    [SkillGroup("research-skill", set_learned("", []),
+                                _tasks(researcher_persona))],
+                    edit_budget=4, night=1,
+                )
+                self.assertEqual(sorted(os.listdir(watched)), before)
+            finally:
+                os.chdir(original_cwd)
+
+    def test_the_no_files_assertion_would_actually_catch_a_write(self):
+        # Guards the guard: if the harness above ever stops watching the place
+        # writes land, this fails and says so.
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            try:
+                watched = os.path.realpath(tmp)
+                before = sorted(os.listdir(watched))
+                with open("written-by-the-code-under-test", "w") as handle:
+                    handle.write("x")
+                self.assertNotEqual(sorted(os.listdir(watched)), before)
+            finally:
+                os.chdir(original_cwd)
 
 
 if __name__ == "__main__":
