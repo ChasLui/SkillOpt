@@ -46,17 +46,32 @@ def _mk_task(d: SessionDigest, obj: Dict[str, Any], idx: int) -> TaskRecord | No
     if len(intent) < 8:
         return None
     checks = obj.get("checks") or []
-    rubric = str(obj.get("rubric", "")).strip()
+    # A non-string rubric (e.g. a JSON null) must not become the literal "None"
+    # and outrank the checks; only a real string counts as a rubric.
+    rubric_raw = obj.get("rubric")
+    rubric = rubric_raw.strip() if isinstance(rubric_raw, str) else ""
     satisfied = bool(obj.get("satisfied", False))
 
-    # keep only well-formed checks
+    # Keep only well-formed checks: the scorer runs these verbatim during
+    # replay, so a max_chars/min_chars with a non-integer arg (or an arg-less
+    # op that needs one) would crash or fail forever. Drop those here.
+    _needs_str_arg = {"section_present", "regex", "contains", "not_contains", "tool_called"}
     clean_checks = []
     for c in checks:
-        if isinstance(c, dict) and c.get("op") in {
-            "section_present", "regex", "contains", "not_contains",
-            "no_refusal", "tool_called", "max_chars", "min_chars",
-        }:
-            clean_checks.append({"op": c["op"], "arg": c.get("arg")})
+        if not isinstance(c, dict):
+            continue
+        op = c.get("op")
+        arg = c.get("arg")
+        if op in _needs_str_arg:
+            if isinstance(arg, str) and arg.strip():
+                clean_checks.append({"op": op, "arg": arg})
+        elif op in {"max_chars", "min_chars"}:
+            try:
+                clean_checks.append({"op": op, "arg": int(arg)})
+            except (TypeError, ValueError):
+                continue
+        elif op == "no_refusal":
+            clean_checks.append({"op": op, "arg": None})
 
     import hashlib
     tid = "llm_" + hashlib.sha256((d.project + intent).encode()).hexdigest()[:12]

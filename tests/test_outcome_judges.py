@@ -236,3 +236,44 @@ def test_miner_keeps_a_tool_called_check() -> None:
     )
     assert task is not None
     assert task.judge["checks"] == [{"op": "tool_called", "arg": "search"}]
+
+
+def test_miner_ignores_a_non_string_rubric() -> None:
+    # A JSON null rubric must not coerce to the literal "None" and win over the
+    # real checks.
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [{"op": "not_contains", "arg": "TODO"}],
+            "rubric": None,
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    assert task.reference_kind == "rule"
+    assert task.judge["checks"] == [{"op": "not_contains", "arg": "TODO"}]
+
+
+def test_miner_drops_malformed_char_checks() -> None:
+    # A max_chars with a non-integer arg would crash the scorer during replay;
+    # it is dropped, and an arg-less contains is dropped too.
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [
+                {"op": "max_chars", "arg": "lots"},
+                {"op": "contains", "arg": ""},
+                {"op": "min_chars", "arg": "50"},
+            ],
+            "rubric": "",
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    # only the coercible min_chars survives, normalized to an int
+    assert task.judge["checks"] == [{"op": "min_chars", "arg": 50}]
+

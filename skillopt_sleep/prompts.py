@@ -50,6 +50,7 @@ For each task return:
      an outcome check, never alone:
         {"op":"section_present","arg":"<heading text>"}
         {"op":"max_chars","arg":<int>}
+        {"op":"min_chars","arg":<int>}
      Only include checks you are confident a GOOD answer must satisfy.
   - "rubric": a one-sentence description of what a GOOD answer achieves —
      judged on substance, not on wording or layout. ALWAYS provide this. It is
