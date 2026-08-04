@@ -173,6 +173,14 @@ def _render_report_md(report: SleepReport, cfg: SleepConfig) -> str:
         f"- tokens used: {report.tokens_used}",
         "",
     ]
+    if report.holdout_leaked:
+        lines[-1:] = [
+            "> **Not validated.** The gate scored the same tasks the optimizer "
+            "saw, so the comparison above cannot detect overfitting. Mine more "
+            "tasks so a disjoint validation slice exists. Any edits below are "
+            "unverified suggestions.",
+            "",
+        ]
     if report.edits:
         lines.append("## Accepted edits")
         for e in report.edits:
@@ -446,6 +454,7 @@ def run_sleep_cycle(
     report.candidate_score = result.candidate_score
     report.accepted = result.accepted
     report.gate_action = result.gate_action
+    report.holdout_leaked = getattr(result, "holdout_leaked", False)
     report.no_edits_reason = getattr(result, "no_edits_reason", "")
     report.edits = result.applied_edits
     report.rejected_edits = result.rejected_edits
@@ -494,6 +503,8 @@ def run_sleep_cycle(
                     "baseline_score": result.baseline_score,
                     "candidate_score": result.candidate_score,
                     "accepted": result.accepted,
+                    "gate_action": result.gate_action,
+                    "holdout_leaked": getattr(result, "holdout_leaked", False),
                     "n_applied_edits": len(result.applied_edits),
                     "n_rejected_edits": len(result.rejected_edits),
                     "n_unmatched_edits": len(result.unmatched_edits),

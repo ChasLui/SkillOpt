@@ -45,20 +45,30 @@ class ConsolidationResult:
     holdout_detail: List[dict] = field(default_factory=list)  # per val task: hard/soft/resp/why
     reflect_raw: str = ""        # the optimizer's last raw reply (empty => reflect produced nothing)
     call_error: str = ""         # backend's last call error (timeout/auth/empty)
+    # True when the gate's val slice was not disjoint from the tasks reflect
+    # saw, so its comparison cannot detect overfitting. A night in this state
+    # stages edits but never certifies them.
+    holdout_leaked: bool = False
 
 
-def _split(tasks: List[TaskRecord]) -> Tuple[List[TaskRecord], List[TaskRecord]]:
-    """Return (train_tasks, val_tasks).
+def _split(tasks: List[TaskRecord]) -> Tuple[List[TaskRecord], List[TaskRecord], bool]:
+    """Return ``(train_tasks, val_tasks, holdout_leaked)``.
 
     train drives reflect; val gates updates. test is held out entirely from
     consolidation and is scored by the caller. Accepts legacy split names
     (replay->train, holdout->val) for robustness.
+
+    ``holdout_leaked`` is True when val is not disjoint from train — i.e. the
+    gate would score the very tasks the edits were derived from. A single mined
+    task always lands here. Such a comparison cannot detect overfitting, so the
+    caller must not treat it as validation.
     """
     def _norm(s: str) -> str:
         return {"replay": "train", "holdout": "val"}.get(s, s)
 
     train = [t for t in tasks if _norm(t.split) == "train"]
     val = [t for t in tasks if _norm(t.split) == "val"]
+    leaked = False
     # Be robust if a split is empty: fall back so a night still does something,
     # but never silently use test as train or val. An all-test batch therefore
     # returns empty train/val (caller scores test separately; gate is a no-op).
@@ -66,9 +76,15 @@ def _split(tasks: List[TaskRecord]) -> Tuple[List[TaskRecord], List[TaskRecord]]
         # Prefer train as the gate reference; otherwise any non-test tasks.
         # Do not fall back to the full task list (that would leak held-out test).
         val = train or [t for t in tasks if _norm(t.split) != "test"]
+        leaked = bool(val)
     if not train:
         train = val
-    return train, val
+        leaked = leaked or bool(train)
+    if not leaked and train and val:
+        train_ids = {t.id for t in train}
+        if any(t.id in train_ids for t in val):
+            leaked = True
+    return train, val, leaked
 
 
 def _holdout_detail(pairs: List[Tuple[TaskRecord, ReplayResult]]) -> List[dict]:
@@ -116,7 +132,7 @@ def consolidate(
     """
     from skillopt_sleep import evidence as evlog
     ev = evlog.get(backend)
-    train_tasks, val_tasks = _split(tasks)
+    train_tasks, val_tasks, holdout_leaked = _split(tasks)
     gate_off = str(gate_mode).strip().lower() in {"off", "none", "false", "greedy"}
     holdout_detail: List[dict] = []
 
@@ -295,6 +311,14 @@ def consolidate(
         # `accepted` is False makes the headline contradict the outcome.
         if not accepted and action in {"accept", "accept_new_best"}:
             action = "reject"
+        # The gate cannot certify an improvement it measured on the same tasks
+        # the edits were derived from -- that comparison cannot detect
+        # overfitting, which is exactly how a reward hack scores 1.0. Abstain
+        # rather than report a verdict the evidence does not support. Edits are
+        # still staged, so a human can review them.
+        if accepted and holdout_leaked:
+            action = "reject_unverified"
+            accepted = False
         # A per-target trial can improve and tentatively apply an edit, while a
         # later fresh final replay regresses. The returned documents already
         # roll back in that case; keep the edit bookkeeping/report consistent
@@ -342,4 +366,5 @@ def consolidate(
         holdout_detail=holdout_detail,
         reflect_raw=getattr(backend, "last_reflect_raw", "") or "",
         call_error=getattr(backend, "last_call_error", "") or "",
+        holdout_leaked=holdout_leaked,
     )
