@@ -7,9 +7,11 @@ WITH a checkable rubric judge — the missing piece for real-data improvement.
 
 For each recurring intent it extracts:
   * a clean, generalized `intent` (the reusable task, stripped of one-off specifics)
-  * a `rubric` (what a good answer must satisfy) -> stored as a rule judge of
-    `contains`/`regex`/`section_present` checks the local judge can score, OR a
-    free-text rubric scored by the backend's judge() when no programmatic check fits
+  * a `rubric` (what a good answer must satisfy). A rubric, when present, is
+    always stored as the reference and scored by the backend's judge() -- it
+    resists the reward-hacking that literal/format checks invite. Programmatic
+    `contains`/`regex`/`section_present`/`tool_called` checks are kept only as a
+    fallback reference for the intents where the miner supplies no rubric.
   * a preference signal (was the user satisfied?) to weight failures
 
 It is deliberately conservative: it only emits a task when it can name a
@@ -52,7 +54,7 @@ def _mk_task(d: SessionDigest, obj: Dict[str, Any], idx: int) -> TaskRecord | No
     for c in checks:
         if isinstance(c, dict) and c.get("op") in {
             "section_present", "regex", "contains", "not_contains",
-            "no_refusal", "max_chars", "min_chars",
+            "no_refusal", "tool_called", "max_chars", "min_chars",
         }:
             clean_checks.append({"op": c["op"], "arg": c.get("arg")})
 

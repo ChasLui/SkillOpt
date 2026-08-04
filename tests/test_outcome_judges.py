@@ -203,3 +203,36 @@ def test_miner_keeps_the_new_outcome_ops() -> None:
     )
     assert task is not None
     assert task.judge["checks"] == [{"op": "not_contains", "arg": "TODO"}]
+
+
+# --- review-follow-up regressions -------------------------------------------
+
+
+def test_no_refusal_does_not_flag_a_helpful_sorry() -> None:
+    # "Sorry, I can help" opens with an apology but is not an abstention; the
+    # refusal prefixes must not swallow it.
+    judge = {"kind": "rule", "checks": [{"op": "no_refusal"}]}
+    assert score_rule_judge(judge, "Sorry, I can help with that. Here it is.")[0] == 1.0
+
+
+@pytest.mark.parametrize("bad", [[], ["not", "a", "dict"], "string", 7, True])
+def test_is_shape_only_returns_false_for_non_dict(bad) -> None:
+    # A public helper imported by tests must not raise on a truthy non-dict.
+    assert is_shape_only(bad) is False
+
+
+def test_miner_keeps_a_tool_called_check() -> None:
+    # tool_called is advertised by the miner prompt and supported by the local
+    # judge, so a tool-only task must not be dropped as uncheckable.
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "invoke the search tool for a task",
+            "checks": [{"op": "tool_called", "arg": "search"}],
+            "rubric": "",
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    assert task.judge["checks"] == [{"op": "tool_called", "arg": "search"}]

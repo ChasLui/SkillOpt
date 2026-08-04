@@ -56,7 +56,8 @@ _REFUSAL_PREFIXES = (
     "i'm unable",
     "i am unable",
     "unable to complete",
-    "sorry, i can",
+    "sorry, i can't",
+    "sorry, i cannot",
     "no can do",
 )
 
@@ -133,7 +134,9 @@ def is_shape_only(judge: Any) -> bool:
     Such a judge cannot distinguish a better answer from a reformatted one, so
     callers should prefer outcome grading (a rubric) instead of trusting it.
     """
-    checks = (judge or {}).get("checks", []) or []
+    if not isinstance(judge, dict):
+        return False
+    checks = judge.get("checks", []) or []
     if not isinstance(checks, list) or not checks:
         return False
     ops = [c.get("op") for c in checks if isinstance(c, dict)]
