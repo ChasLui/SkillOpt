@@ -24,6 +24,12 @@ _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+# Progress output contains box-drawing and arrow characters. On a Windows
+# console defaulting to cp1252 those raise UnicodeEncodeError mid-run.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 from skillopt.model import (
     configure_azure_openai,
     configure_claude_code_exec,
