@@ -33,19 +33,28 @@ _MINER = """You are mining a user's past AI-assistant sessions to find RECURRING
 worth optimizing a skill for. From the session below, extract 0-3 reusable tasks.
 
 A good task is something the user asks for repeatedly or had to correct, where a
-GENERAL rule would help next time (formatting, structure, tool-use, conventions).
-Skip one-off or purely exploratory requests.
+GENERAL rule would help next time (correctness, completeness, tool-use,
+conventions). Skip one-off or purely exploratory requests.
 
 For each task return:
   - "intent": the reusable request, generalized (no one-off specifics)
   - "checks": a list of programmatic success checks a grader can run on a future
-     answer. Each check is one of:
-        {"op":"section_present","arg":"<heading text>"}
+     answer. Prefer checks about WHAT THE ANSWER DOES over how it is formatted:
+        {"op":"contains","arg":"<substring a correct answer must contain>"}
+        {"op":"not_contains","arg":"<substring a correct answer must NOT contain>"}
+        {"op":"no_refusal"}
         {"op":"regex","arg":"<python regex the answer must match>"}
-        {"op":"contains","arg":"<substring the answer must contain>"}
+        {"op":"tool_called","arg":"<tool the task requires>"}
+     Formatting checks are available but weak, because an assistant can satisfy
+     them by reformatting without answering any better. Use them only alongside
+     an outcome check, never alone:
+        {"op":"section_present","arg":"<heading text>"}
         {"op":"max_chars","arg":<int>}
      Only include checks you are confident a GOOD answer must satisfy.
-  - "rubric": a one-sentence description of what a good answer looks like
+  - "rubric": a one-sentence description of what a GOOD answer achieves —
+     judged on substance, not on wording or layout. ALWAYS provide this. It is
+     the primary grader, because an assistant can satisfy any literal-string
+     check simply by emitting that string.
   - "satisfied": true/false — did the user seem satisfied with the assistant's answer?
 
 Return ONLY a JSON array (possibly empty). No prose.

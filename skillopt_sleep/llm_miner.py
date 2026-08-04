@@ -18,8 +18,6 @@ can't make checkable are dropped (logged), not faked.
 """
 from __future__ import annotations
 
-import json
-import re
 from typing import Any, Callable, Dict, List
 
 from skillopt_sleep import prompts as prompt_registry
@@ -53,25 +51,34 @@ def _mk_task(d: SessionDigest, obj: Dict[str, Any], idx: int) -> TaskRecord | No
     clean_checks = []
     for c in checks:
         if isinstance(c, dict) and c.get("op") in {
-            "section_present", "regex", "contains", "max_chars", "min_chars",
+            "section_present", "regex", "contains", "not_contains",
+            "no_refusal", "max_chars", "min_chars",
         }:
             clean_checks.append({"op": c["op"], "arg": c.get("arg")})
 
     import hashlib
     tid = "llm_" + hashlib.sha256((d.project + intent).encode()).hexdigest()[:12]
 
-    if clean_checks:
-        return TaskRecord(
-            id=tid, project=d.project, intent=intent,
-            reference_kind="rule", judge={"kind": "rule", "checks": clean_checks},
-            outcome="success" if satisfied else "fail",
-            tags=["mined:llm"], source_sessions=[d.session_id],
-            skill_hint=session_skill_hint(d),
-        )
+    judge = {"kind": "rule", "checks": clean_checks}
+    # The optimizer edits skill text that is prepended to the model's context,
+    # so ANY check for a literal string in the response can be satisfied by
+    # instructing the model to emit that string -- observed twice in practice,
+    # first with section_present and then with contains. Only semantic grading
+    # resists that, so a rubric always wins when the miner supplies one.
+    # Rule judges remain for imported gbrain-style benchmarks, which carry
+    # checks but no rubric.
     if rubric:
         return TaskRecord(
             id=tid, project=d.project, intent=intent,
             reference_kind="rubric", reference=rubric,
+            outcome="success" if satisfied else "fail",
+            tags=["mined:llm"], source_sessions=[d.session_id],
+            skill_hint=session_skill_hint(d),
+        )
+    if clean_checks:
+        return TaskRecord(
+            id=tid, project=d.project, intent=intent,
+            reference_kind="rule", judge=judge,
             outcome="success" if satisfied else "fail",
             tags=["mined:llm"], source_sessions=[d.session_id],
             skill_hint=session_skill_hint(d),

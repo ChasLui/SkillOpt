@@ -128,8 +128,9 @@ class TestValidateChecks(unittest.TestCase):
             {"checks": [{"op": "min_chars", "arg": 0}]}
         )
         self.assertEqual(errors, [])
-        self.assertEqual(len(warnings), 1)
-        self.assertIn("always passes", warnings[0])
+        # min_chars is also a shape op, so a lone one now draws a second
+        # warning; the toothless-bound warning must still be present.
+        self.assertTrue(any("always passes" in w for w in warnings), warnings)
 
     def test_empty_string_operator_arguments_are_errors(self) -> None:
         for op in ("regex", "section_present", "contains", "tool_called"):
@@ -178,7 +179,10 @@ class TestValidateChecks(unittest.TestCase):
         for op in KNOWN_OPS:
             arg = 1 if op.endswith("_chars") else "x"
             errors, warnings = validate_checks({"checks": [{"op": op, "arg": arg}]})
-            self.assertEqual((errors, warnings), ([], []), op)
+            self.assertEqual(errors, [], op)
+            # A lone formatting op is still accepted, but is now flagged as
+            # gameable; no other warning should fire.
+            self.assertTrue(all("shape-only" in w for w in warnings), (op, warnings))
 
 
 @pytest.mark.parametrize("bad_judge", [[], "", 0])

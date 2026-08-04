@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+import pytest
+
+from skillopt_sleep.judges import (
+    KNOWN_OPS,
+    SHAPE_OPS,
+    is_shape_only,
+    score_rule_judge,
+    validate_checks,
+)
+from skillopt_sleep.llm_miner import _mk_task
+from skillopt_sleep.types import SessionDigest
+
+
+def _digest() -> SessionDigest:
+    return SessionDigest(
+        session_id="s1",
+        project=r"C:\proj",
+        user_prompts=["gather context for a task"],
+        assistant_finals=["done"],
+        n_user_turns=1,
+        n_assistant_turns=1,
+    )
+
+
+# --- outcome ops -------------------------------------------------------------
+
+
+def test_not_contains_passes_when_absent_and_fails_when_present() -> None:
+    judge = {"kind": "rule", "checks": [{"op": "not_contains", "arg": "TODO"}]}
+    assert score_rule_judge(judge, "a complete answer")[0] == 1.0
+    assert score_rule_judge(judge, "still TODO")[0] == 0.0
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        "Cannot complete this task. There is no benchmark spec in scope.",
+        "I cannot help with that.",
+        "I'm unable to do this.",
+        "",
+    ],
+)
+def test_no_refusal_fails_on_bare_refusals(response: str) -> None:
+    judge = {"kind": "rule", "checks": [{"op": "no_refusal"}]}
+    assert score_rule_judge(judge, response)[0] == 0.0
+
+
+def test_no_refusal_passes_on_substantive_answer() -> None:
+    judge = {"kind": "rule", "checks": [{"op": "no_refusal"}]}
+    assert score_rule_judge(judge, "Here is the context you asked for: ...")[0] == 1.0
+
+
+def test_no_refusal_accepts_a_refusal_that_still_does_the_work() -> None:
+    # An abstention that explains what was searched and what is missing is a
+    # useful answer, not a dead end.
+    response = "Cannot complete this task. " + (
+        "I searched the working directory, the session artifacts folder, and "
+        "the benchmarks docs path, and none of them contain a spec. To proceed "
+        "I would need the spec file or a path to it. Here is what I checked and "
+        "what each location contained, so the gap is reproducible. " * 3
+    )
+    assert len(response) >= 600
+    judge = {"kind": "rule", "checks": [{"op": "no_refusal"}]}
+    assert score_rule_judge(judge, response)[0] == 1.0
+
+
+def test_new_ops_are_registered_and_validate() -> None:
+    assert {"not_contains", "no_refusal"} <= KNOWN_OPS
+    errors, _ = validate_checks(
+        {"checks": [{"op": "not_contains", "arg": "x"}, {"op": "no_refusal"}]}
+    )
+    assert errors == []
+
+
+def test_not_contains_requires_an_arg() -> None:
+    errors, _ = validate_checks({"checks": [{"op": "not_contains", "arg": "  "}]})
+    assert errors and "not_contains" in errors[0]
+
+
+# --- shape-only detection ----------------------------------------------------
+
+
+def test_shape_ops_are_the_formatting_ops() -> None:
+    assert SHAPE_OPS == {"section_present", "max_chars", "min_chars"}
+
+
+def test_is_shape_only_flags_a_formatting_judge() -> None:
+    assert is_shape_only({"checks": [{"op": "section_present", "arg": "Results"}]})
+    assert is_shape_only(
+        {"checks": [{"op": "section_present", "arg": "Results"}, {"op": "max_chars", "arg": 500}]}
+    )
+
+
+def test_is_shape_only_false_when_any_outcome_op_present() -> None:
+    assert not is_shape_only(
+        {
+            "checks": [
+                {"op": "section_present", "arg": "Results"},
+                {"op": "contains", "arg": "answer"},
+            ]
+        }
+    )
+    assert not is_shape_only({"checks": []})
+    assert not is_shape_only(None)
+
+
+def test_validate_warns_on_shape_only_judge() -> None:
+    _, warnings = validate_checks({"checks": [{"op": "section_present", "arg": "Results"}]})
+    assert any("shape-only" in w for w in warnings)
+
+
+def test_validate_does_not_warn_when_an_outcome_op_is_present() -> None:
+    _, warnings = validate_checks(
+        {"checks": [{"op": "section_present", "arg": "Results"}, {"op": "no_refusal"}]}
+    )
+    assert not any("shape-only" in w for w in warnings)
+
+
+# --- miner preference: the actual reward-hack regression ---------------------
+
+
+def test_shape_only_checks_lose_to_the_rubric() -> None:
+    # Regression for the observed hack: a `section_present=Results` judge let
+    # the optimizer score 1.0 by adding a heading. With a rubric available the
+    # task must be graded on outcome instead.
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [{"op": "section_present", "arg": "Results"}],
+            "rubric": "A good answer reports what was found and what is missing.",
+            "satisfied": False,
+        },
+        0,
+    )
+    assert task is not None
+    assert task.reference_kind == "rubric"
+    assert "what is missing" in task.reference
+
+
+def test_shape_only_checks_still_used_when_no_rubric_offered() -> None:
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [{"op": "section_present", "arg": "Results"}],
+            "rubric": "",
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    assert task.reference_kind == "rule"
+
+
+def test_outcome_checks_also_lose_to_the_rubric() -> None:
+    # Second-order regression: after shape checks were demoted, the miner
+    # produced `contains=DEFAULT_ORGANIZATION` and the optimizer won by
+    # injecting that literal. Any literal-string check is injectable through
+    # skill text, so the rubric wins whenever one exists.
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [{"op": "contains", "arg": "DEFAULT_ORGANIZATION"}],
+            "rubric": "A good answer reports what was found.",
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    assert task.reference_kind == "rubric"
+
+
+def test_outcome_checks_used_when_no_rubric_offered() -> None:
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [{"op": "no_refusal"}],
+            "rubric": "",
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    assert task.reference_kind == "rule"
+    assert task.judge["checks"] == [{"op": "no_refusal", "arg": None}]
+
+
+def test_miner_keeps_the_new_outcome_ops() -> None:
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [{"op": "not_contains", "arg": "TODO"}],
+            "rubric": "",
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    assert task.judge["checks"] == [{"op": "not_contains", "arg": "TODO"}]
