@@ -25,10 +25,20 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 # Progress output contains box-drawing and arrow characters. On a Windows
-# console defaulting to cp1252 those raise UnicodeEncodeError mid-run.
+# console defaulting to cp1252 those raise UnicodeEncodeError mid-run. A cp1252
+# file redirection crashes identically, so this deliberately is not gated on
+# isatty(); it is a best-effort no-op for streams that are already UTF-8 or
+# expose an incompatible reconfigure().
 for _stream in (sys.stdout, sys.stderr):
-    if hasattr(_stream, "reconfigure"):
-        _stream.reconfigure(encoding="utf-8", errors="replace")
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is None:
+        continue
+    if (getattr(_stream, "encoding", "") or "").lower().replace("-", "") == "utf8":
+        continue
+    try:
+        _reconfigure(encoding="utf-8", errors="replace")
+    except (ValueError, OSError, TypeError):
+        pass
 
 from skillopt.model import (
     configure_azure_openai,

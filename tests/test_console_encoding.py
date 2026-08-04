@@ -23,6 +23,8 @@ def test_script_reconfigures_streams_to_utf8(script: str, monkeypatch) -> None:
     recorded: list[dict] = []
 
     class _Stream(io.StringIO):
+        encoding = "cp1252"
+
         def reconfigure(self, **kwargs):
             recorded.append(kwargs)
 
@@ -37,8 +39,7 @@ def test_script_reconfigures_streams_to_utf8(script: str, monkeypatch) -> None:
     assert {"encoding": "utf-8", "errors": "replace"} in recorded
 
 
-@pytest.mark.parametrize("script", _SCRIPTS)
-def test_cp1252_console_survives_arrow_output(script: str) -> None:
+def test_cp1252_console_survives_arrow_output() -> None:
     """The characters that used to crash a run must now be writable."""
     buf = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
     buf.reconfigure(encoding="utf-8", errors="replace")
