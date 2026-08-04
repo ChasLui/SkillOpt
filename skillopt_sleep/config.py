@@ -30,7 +30,9 @@ DEFAULTS: Dict[str, Any] = {
     "pi_home": PI_HOME,
     "cursor_home": CURSOR_HOME,
     "vscode_workspace_storage": "",  # "" => auto-detect platform defaults
-    # Explicit sources also include copilot, cursor, and pi. ``auto`` keeps
+    "copilot_cli_session_store": "",  # "" => ~/.copilot/session-store.db
+    # Explicit sources also include copilot, copilot_cli, cursor, and pi.
+    # ``auto`` keeps
     # the established Codex-then-Claude precedence for backward compatibility.
     "transcript_source": "claude",
     "projects": "invoked",        # "invoked" | "all" | [list of abs paths]
@@ -137,6 +139,13 @@ class SleepConfig:
     def cursor_projects_dir(self) -> str:
         cursor_home = os.path.abspath(os.path.expanduser(str(self.data["cursor_home"])))
         return os.path.join(cursor_home, "projects")
+
+    @property
+    def copilot_cli_session_store(self) -> str:
+        value = self.data.get("copilot_cli_session_store", "") or ""
+        if not value:
+            return ""
+        return os.path.abspath(os.path.expanduser(str(value)))
 
     @property
     def vscode_workspace_storage(self) -> str:
