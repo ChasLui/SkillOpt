@@ -173,7 +173,10 @@ def _render_report_md(report: SleepReport, cfg: SleepConfig) -> str:
         f"- tokens used: {report.tokens_used}",
         "",
     ]
-    if report.holdout_leaked:
+    gate_on = str(cfg.get("gate_mode", "on")).strip().lower() not in {
+        "off", "none", "false", "greedy",
+    }
+    if report.holdout_leaked and gate_on:
         lines[-1:] = [
             "> **Not validated.** The gate scored the same tasks the optimizer "
             "saw, so the comparison above cannot detect overfitting. Mine more "

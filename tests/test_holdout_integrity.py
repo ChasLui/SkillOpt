@@ -49,7 +49,7 @@ def test_split_is_clean_when_train_and_val_are_disjoint() -> None:
     assert leaked is False
 
 
-def test_test_split_is_never_used_as_train_or_val() -> None:
+def test_lone_test_task_is_never_used_as_train_or_val() -> None:
     train, val, _leaked = _split([_task("t", "test")])
     assert train == [] and val == []
 
@@ -138,3 +138,24 @@ def test_gate_still_accepts_a_genuine_improvement(monkeypatch) -> None:
     assert result.gate_action in {"accept", "accept_new_best"}
     assert result.candidate_score > result.baseline_score
     assert _ScriptedBackend.MARKER in result.new_skill
+
+
+# --- report banner -----------------------------------------------------------
+
+
+def test_not_validated_banner_shown_only_when_gate_is_on() -> None:
+    from skillopt_sleep.config import SleepConfig
+    from skillopt_sleep.cycle import _render_report_md
+    from skillopt_sleep.types import SleepReport
+
+    report = SleepReport(night=1, project="/p", holdout_leaked=True)
+
+    on = _render_report_md(report, SleepConfig())
+    assert "Not validated" in on
+
+    off_cfg = SleepConfig()
+    off_cfg.data["gate_mode"] = "off"
+    off = _render_report_md(report, off_cfg)
+    # In greedy mode the gate does no scoring, so the "gate scored the same
+    # tasks" banner would be misleading and must be suppressed.
+    assert "Not validated" not in off
