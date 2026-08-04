@@ -15,6 +15,8 @@ _BASE_CONFIG = ("openai_chat", "openai_chat")
     [
         ("cursor", ("openai_chat", "cursor_exec")),
         ("cursor_exec", ("openai_chat", "cursor_exec")),
+        ("claude", ("claude_chat", "claude_chat")),
+        ("claude_chat", ("claude_chat", "claude_chat")),
         ("claude_code_exec", ("openai_chat", "claude_code_exec")),
         ("codex", ("codex_exec", "codex_exec")),
         ("codex_exec", ("codex_exec", "codex_exec")),
@@ -71,3 +73,7 @@ def test_copilot_exec_keeps_a_chat_optimizer() -> None:
 
 def test_claude_maps_both_roles() -> None:
     assert _resolve_role_backends("claude", None, None) == ("claude_chat", "claude_chat")
+    # And -- the regression -- when the base config pins both roles to the
+    # truthy openai_chat default, --backend claude must still win.
+    assert _resolve_role_backends("claude", *_BASE_CONFIG) == ("claude_chat", "claude_chat")
+    assert _resolve_role_backends("claude_chat", *_BASE_CONFIG) == ("claude_chat", "claude_chat")

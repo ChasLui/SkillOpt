@@ -470,8 +470,13 @@ def _resolve_role_backends(
         return optimizer_backend, target_backend
 
     if backend in {"claude", "claude_chat"}:
-        optimizer_backend = optimizer_backend or "claude_chat"
-        target_backend = target_backend or "claude_chat"
+        # A chat backend fills BOTH roles, so -- like copilot -- a role pinned
+        # to a default (including the base config's truthy openai_chat) must be
+        # overridden. `x = x or ...` would leave openai_chat in place.
+        if optimizer_backend in _ROLE_BACKEND_DEFAULTS:
+            optimizer_backend = "claude_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "claude_chat"
     elif backend in {"codex", "codex_exec"}:
         if optimizer_backend in _ROLE_BACKEND_DEFAULTS:
             optimizer_backend = "codex_exec"
