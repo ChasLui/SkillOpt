@@ -52,5 +52,22 @@ def test_explicit_target_is_preserved_when_optimizer_is_default() -> None:
     )
 
 
+def test_copilot_maps_both_roles_to_the_local_cli() -> None:
+    # `copilot` is the only fully local option: no cloud API key is needed
+    # because the CLI carries its own sign-in.
+    assert _resolve_role_backends("copilot", *_BASE_CONFIG) == ("copilot_chat", "copilot_chat")
+    assert _resolve_role_backends("copilot_chat", *_BASE_CONFIG) == (
+        "copilot_chat",
+        "copilot_chat",
+    )
+
+
+def test_copilot_exec_keeps_a_chat_optimizer() -> None:
+    assert _resolve_role_backends("copilot_exec", *_BASE_CONFIG) == (
+        "openai_chat",
+        "copilot_exec",
+    )
+
+
 def test_claude_maps_both_roles() -> None:
     assert _resolve_role_backends("claude", None, None) == ("claude_chat", "claude_chat")

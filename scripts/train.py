@@ -137,7 +137,7 @@ def parse_args() -> argparse.Namespace:
     # Legacy flat CLI overrides (still work, prefer --cfg-options for new usage)
     p.add_argument("--env", type=str)
     p.add_argument("--backend", type=str,
-                   choices=["azure_openai", "codex", "codex_exec", "claude", "claude_chat", "claude_code_exec", "cursor", "cursor_exec", "qwen", "qwen_chat", "minimax", "minimax_chat"])
+                   choices=["azure_openai", "codex", "codex_exec", "claude", "claude_chat", "claude_code_exec", "cursor", "cursor_exec", "copilot", "copilot_chat", "copilot_exec", "qwen", "qwen_chat", "minimax", "minimax_chat"])
     p.add_argument("--optimizer_model", type=str)
     p.add_argument("--target_model", type=str)
     p.add_argument("--optimizer_backend", type=str)
@@ -207,6 +207,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--claude_code_exec_max_thinking_tokens", type=int)
     p.add_argument("--cursor_exec_path", type=str)
     p.add_argument("--cursor_exec_sandbox", type=str)
+    p.add_argument("--copilot_exec_path", type=str)
+    p.add_argument("--copilot_exec_home", type=str)
+    p.add_argument("--copilot_exec_allow_all_tools", type=_BOOL)
+    p.add_argument("--copilot_chat_optimizer_model", type=str)
+    p.add_argument("--copilot_chat_target_model", type=str)
+    p.add_argument("--copilot_chat_timeout", type=int)
     p.add_argument("--codex_trace_to_optimizer", type=_BOOL)
     p.add_argument("--skill_init", type=str)
     p.add_argument("--num_epochs", type=int)
@@ -347,6 +353,12 @@ _LEGACY_TO_STRUCTURED: dict[str, str] = {
     "claude_code_exec_max_thinking_tokens": "model.claude_code_exec_max_thinking_tokens",
     "cursor_exec_path": "model.cursor_exec_path",
     "cursor_exec_sandbox": "model.cursor_exec_sandbox",
+    "copilot_exec_path": "model.copilot_exec_path",
+    "copilot_exec_home": "model.copilot_exec_home",
+    "copilot_exec_allow_all_tools": "model.copilot_exec_allow_all_tools",
+    "copilot_chat_optimizer_model": "model.copilot_chat_optimizer_model",
+    "copilot_chat_target_model": "model.copilot_chat_target_model",
+    "copilot_chat_timeout": "model.copilot_chat_timeout",
     "codex_trace_to_optimizer": "model.codex_trace_to_optimizer",
     "num_epochs": "train.num_epochs",
     "train_size": "train.train_size",

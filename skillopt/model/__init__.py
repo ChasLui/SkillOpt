@@ -7,15 +7,20 @@ from typing import Any
 from skillopt.model import azure_openai as _openai
 from skillopt.model import claude_backend as _claude
 from skillopt.model import codex_backend as _codex
+from skillopt.model import copilot_backend as _copilot
 from skillopt.model import minimax_backend as _minimax
 from skillopt.model import openai_compatible_backend as _openai_compat
 from skillopt.model import qwen_backend as _qwen
 from skillopt.model.backend_config import (  # noqa: F401
     configure_claude_code_exec,
     configure_codex_exec,
+    configure_copilot_chat,
+    configure_copilot_exec,
     configure_cursor_exec,
     get_claude_code_exec_config,
     get_codex_exec_config,
+    get_copilot_chat_config,
+    get_copilot_exec_config,
     get_cursor_exec_config,
     get_optimizer_backend,
     get_target_backend,
@@ -59,6 +64,16 @@ def set_backend(name: str | None) -> str:
         set_optimizer_backend("openai_chat")
         set_target_backend("cursor_exec")
         return "cursor_exec"
+    if normalized in {"copilot", "copilot_cli", "github_copilot", "copilot_chat"}:
+        # Fully local: the Copilot CLI drives BOTH the optimizer and the target,
+        # so a run needs no cloud API key.
+        set_optimizer_backend("copilot_chat")
+        set_target_backend("copilot_chat")
+        return "copilot_chat"
+    if normalized == "copilot_exec":
+        set_optimizer_backend("openai_chat")
+        set_target_backend("copilot_exec")
+        return "copilot_exec"
     if normalized in {"qwen", "qwen_chat"}:
         set_optimizer_backend("openai_chat")
         set_target_backend("qwen_chat")
@@ -92,6 +107,8 @@ def get_backend_name() -> str:
         return "minimax_chat"
     if optimizer == "openai_chat" and target == "cursor_exec":
         return "cursor_exec"
+    if optimizer == "openai_chat" and target == "copilot_exec":
+        return "copilot_exec"
     if optimizer == "openai_compatible" and target == "openai_compatible":
         return "openai_compatible"
     return f"{optimizer}+{target}"
@@ -113,6 +130,16 @@ def chat_optimizer(
             max_completion_tokens=max_completion_tokens,
             retries=retries,
             stage=stage,
+            timeout=timeout,
+        )
+    if get_optimizer_backend() == "copilot_chat":
+        return _copilot.chat_optimizer(
+            system=system,
+            user=user,
+            max_completion_tokens=max_completion_tokens,
+            retries=retries,
+            stage=stage,
+            reasoning_effort=reasoning_effort,
             timeout=timeout,
         )
     if get_optimizer_backend() == "qwen_chat":
@@ -212,6 +239,16 @@ def chat_target(
             reasoning_effort=reasoning_effort,
             timeout=timeout,
         )
+    if get_target_backend() == "copilot_chat":
+        return _copilot.chat_target(
+            system=system,
+            user=user,
+            max_completion_tokens=max_completion_tokens,
+            retries=retries,
+            stage=stage,
+            reasoning_effort=reasoning_effort,
+            timeout=timeout,
+        )
     if not is_target_chat_backend():
         raise NotImplementedError(
             "chat_target is only supported with target_backend=openai_chat, claude_chat, qwen_chat, minimax_chat, "
@@ -240,6 +277,14 @@ def chat_optimizer_messages(
     return_message: bool = False,
     timeout: int | None = None,
 ) -> tuple[Any, dict]:
+    if get_optimizer_backend() == "copilot_chat":
+        return _copilot.chat_optimizer_messages(
+            messages=messages,
+            max_completion_tokens=max_completion_tokens,
+            retries=retries,
+            stage=stage,
+            timeout=timeout,
+        )
     if get_optimizer_backend() == "claude_chat":
         return _claude.chat_optimizer_messages(
             messages=messages,
@@ -323,6 +368,14 @@ def chat_target_messages(
     return_message: bool = False,
     timeout: int | None = None,
 ) -> tuple[Any, dict]:
+    if get_target_backend() == "copilot_chat":
+        return _copilot.chat_target_messages(
+            messages=messages,
+            max_completion_tokens=max_completion_tokens,
+            retries=retries,
+            stage=stage,
+            timeout=timeout,
+        )
     if get_target_backend() == "claude_chat":
         return _claude.chat_target_messages(
             messages=messages,

@@ -140,7 +140,7 @@ def parse_args() -> argparse.Namespace:
     # Legacy flat overrides
     p.add_argument("--env", type=str)
     p.add_argument("--backend", type=str,
-                   choices=["azure_openai", "codex", "codex_exec", "claude", "claude_chat", "claude_code_exec", "cursor", "cursor_exec", "minimax", "minimax_chat"])
+                   choices=["azure_openai", "codex", "codex_exec", "claude", "claude_chat", "claude_code_exec", "cursor", "cursor_exec", "copilot", "copilot_chat", "copilot_exec", "minimax", "minimax_chat"])
     p.add_argument("--optimizer_model", type=str)
     p.add_argument("--target_model", type=str)
     p.add_argument("--optimizer_backend", type=str)
@@ -184,6 +184,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--claude_code_exec_max_thinking_tokens", type=int)
     p.add_argument("--cursor_exec_path", type=str)
     p.add_argument("--cursor_exec_sandbox", type=str)
+    p.add_argument("--copilot_exec_path", type=str)
+    p.add_argument("--copilot_exec_home", type=str)
+    p.add_argument("--copilot_exec_allow_all_tools", type=_BOOL)
+    p.add_argument("--copilot_chat_optimizer_model", type=str)
+    p.add_argument("--copilot_chat_target_model", type=str)
+    p.add_argument("--copilot_chat_timeout", type=int)
     p.add_argument("--minimax_base_url", type=str)
     p.add_argument("--minimax_api_key", type=str)
     p.add_argument("--minimax_model", type=str)
@@ -267,6 +273,12 @@ def main() -> None:
                 "claude_code_exec_max_thinking_tokens": "model.claude_code_exec_max_thinking_tokens",
                 "cursor_exec_path": "model.cursor_exec_path",
                 "cursor_exec_sandbox": "model.cursor_exec_sandbox",
+                "copilot_exec_path": "model.copilot_exec_path",
+                "copilot_exec_home": "model.copilot_exec_home",
+                "copilot_exec_allow_all_tools": "model.copilot_exec_allow_all_tools",
+                "copilot_chat_optimizer_model": "model.copilot_chat_optimizer_model",
+                "copilot_chat_target_model": "model.copilot_chat_target_model",
+                "copilot_chat_timeout": "model.copilot_chat_timeout",
                 "minimax_base_url": "model.minimax_base_url",
                 "minimax_api_key": "model.minimax_api_key",
                 "minimax_model": "model.minimax_model",
@@ -343,6 +355,13 @@ def main() -> None:
         elif backend == "cursor_exec":
             _set_role("optimizer_backend", "openai_chat")
             _set_role("target_backend", "cursor_exec")
+        elif backend in {"copilot", "copilot_chat"}:
+            # Both roles on the local CLI: the only fully local configuration.
+            _set_role("optimizer_backend", "copilot_chat")
+            _set_role("target_backend", "copilot_chat")
+        elif backend == "copilot_exec":
+            _set_role("optimizer_backend", "openai_chat")
+            _set_role("target_backend", "copilot_exec")
         elif backend in {"minimax", "minimax_chat"}:
             _set_role("optimizer_backend", "openai_chat")
             _set_role("target_backend", "minimax_chat")
@@ -454,6 +473,16 @@ def main() -> None:
     configure_cursor_exec(
         path=cfg.get("cursor_exec_path") or None,
         sandbox=cfg.get("cursor_exec_sandbox") or None,
+    )
+    configure_copilot_exec(
+        path=cfg.get("copilot_exec_path") or None,
+        home=cfg.get("copilot_exec_home") or None,
+        allow_all_tools=cfg.get("copilot_exec_allow_all_tools"),
+    )
+    configure_copilot_chat(
+        optimizer_model=cfg.get("copilot_chat_optimizer_model") or None,
+        target_model=cfg.get("copilot_chat_target_model") or None,
+        timeout=cfg.get("copilot_chat_timeout") or None,
     )
     configure_qwen_chat(
         base_url=cfg.get("qwen_chat_base_url") or None,

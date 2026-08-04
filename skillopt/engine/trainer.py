@@ -63,6 +63,8 @@ from skillopt.model import (
     configure_azure_openai,
     configure_claude_code_exec,
     configure_codex_exec,
+    configure_copilot_chat,
+    configure_copilot_exec,
     configure_cursor_exec,
     configure_minimax_chat,
     configure_qwen_chat,
@@ -483,6 +485,16 @@ def _resolve_role_backends(
         optimizer_backend = optimizer_backend or "openai_chat"
         if target_backend in _ROLE_BACKEND_DEFAULTS:
             target_backend = "cursor_exec"
+    elif backend in {"copilot", "copilot_chat"}:
+        # Both roles on the local CLI: the only fully local configuration.
+        if optimizer_backend in _ROLE_BACKEND_DEFAULTS:
+            optimizer_backend = "copilot_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "copilot_chat"
+    elif backend == "copilot_exec":
+        optimizer_backend = optimizer_backend or "openai_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "copilot_exec"
     elif backend in {"qwen", "qwen_chat"}:
         optimizer_backend = optimizer_backend or "openai_chat"
         if target_backend in _ROLE_BACKEND_DEFAULTS:
@@ -746,6 +758,16 @@ class ReflACTTrainer:
         configure_cursor_exec(
             path=cfg.get("cursor_exec_path") or None,
             sandbox=cfg.get("cursor_exec_sandbox") or None,
+        )
+        configure_copilot_exec(
+            path=cfg.get("copilot_exec_path") or None,
+            home=cfg.get("copilot_exec_home") or None,
+            allow_all_tools=cfg.get("copilot_exec_allow_all_tools"),
+        )
+        configure_copilot_chat(
+            optimizer_model=cfg.get("copilot_chat_optimizer_model") or None,
+            target_model=cfg.get("copilot_chat_target_model") or None,
+            timeout=cfg.get("copilot_chat_timeout") or None,
         )
         configure_qwen_chat(
             base_url=cfg.get("qwen_chat_base_url") or None,

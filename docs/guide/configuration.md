@@ -43,9 +43,18 @@ model:
 | `claude_chat` | ✓ | ✓ | Claude Code CLI (`claude -p`) |
 | `qwen_chat` | ✓ | ✓ | Qwen served through an OpenAI-compatible local endpoint |
 | `minimax_chat` | ✓ | ✓ | MiniMax API |
+| `copilot_chat` | ✓ | ✓ | GitHub Copilot CLI (`copilot -p`); alias `copilot` |
 | `codex_exec` | — | ✓ | Codex CLI execution harness |
 | `claude_code_exec` | — | ✓ | Claude Code CLI execution harness |
 | `cursor_exec` | — | ✓ | Cursor Agent CLI execution harness |
+| `copilot_exec` | — | ✓ | GitHub Copilot CLI execution harness |
+
+`copilot_chat` is the only backend that fills **both** roles from a locally
+authenticated CLI, so `--backend copilot` runs a complete training loop with no
+cloud API key. Sign in once with `copilot` (GitHub Copilot CLI) beforehand.
+Expect roughly 20-40 s per call: the CLI is an agent, not a completions
+endpoint, so a full-size run is far slower than a hosted backend. It also
+reports no token counts, so usage totals are zero.
 
 The current MiniMax adapter has one shared deployment. Set
 `model.minimax_model` when MiniMax is the target; a mixed-backend run cannot
@@ -191,6 +200,12 @@ Model credentials are loaded from environment variables:
 | `QWEN_CHAT_MODEL` | `qwen_chat` | Served model name for direct library use; train/eval YAML role models take precedence |
 | `MINIMAX_BASE_URL` | `minimax_chat` | MiniMax-compatible base URL |
 | `MINIMAX_API_KEY` | `minimax_chat` | MiniMax API key |
+| `COPILOT_EXEC_PATH` | `copilot_chat`, `copilot_exec` | Optional path to `copilot`; defaults to `copilot` |
+| `COPILOT_EXEC_HOME` | `copilot_chat`, `copilot_exec` | Optional `COPILOT_HOME` override isolating CLI config; sign-in state lives outside it |
+| `COPILOT_EXEC_ALLOW_ALL_TOOLS` | `copilot_exec` | Opt in to `--allow-all-tools` for file-edit rollouts; `false` by default |
+| `COPILOT_CHAT_OPTIMIZER_MODEL` | `copilot_chat` | Optional model ID passed as `--model` for optimizer calls |
+| `COPILOT_CHAT_TARGET_MODEL` | `copilot_chat` | Optional model ID passed as `--model` for target calls |
+| `COPILOT_CHAT_TIMEOUT` | `copilot_chat` | Per-call timeout in seconds |
 
 `OPTIMIZER_` and `TARGET_` prefixes provide per-role overrides for the
 Azure, OpenAI-compatible, and Qwen variable families. See the
@@ -208,6 +223,22 @@ headless `--force` flag inside the benchmark workspace. SkillOpt enables the
 Cursor sandbox by default and rejects file-edit rollouts if it is disabled;
 read-only Ask-mode rollouts may explicitly disable it. SkillOpt does not approve
 MCP servers automatically.
+
+`copilot_chat` drives the GitHub Copilot CLI as a chat model for either role.
+Because the CLI carries its own sign-in, selecting it for both roles
+(`--backend copilot`) makes a run fully local:
+
+```bash
+copilot                      # sign in once, then exit
+skillopt-train --cfg configs/train/default.yaml --backend copilot
+```
+
+Calls are made with built-in MCP servers and custom instructions disabled so
+the model sees only the prompt SkillOpt sends, and `--allow-all-tools` is never
+passed for chat calls. `copilot_exec` is the separate target-only harness that
+runs the CLI as an agent inside a benchmark workspace; unlike the other exec
+harnesses it does not grant unattended tool use unless
+`COPILOT_EXEC_ALLOW_ALL_TOOLS` is set.
 
 ### Three OpenAI-compatible paths
 

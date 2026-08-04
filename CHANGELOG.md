@@ -7,6 +7,14 @@ All notable changes to SkillOpt are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **GitHub Copilot CLI backend**, in two forms: `copilot_chat` (usable as both
+  optimizer and target) and `copilot_exec` (target-only execution harness).
+  Because the Copilot CLI carries its own sign-in, `--backend copilot` selects
+  `copilot_chat` for both roles and runs a complete train/eval loop with **no
+  cloud API key**. Calls disable built-in MCP servers and custom instructions,
+  and never pass `--allow-all-tools`; `copilot_exec` requires an explicit
+  `copilot_exec_allow_all_tools` opt-in before granting unattended tool use.
+  The CLI reports no token counts, so usage totals are zero for these backends.
 - A non-destructive Devin installer and SessionEnd activity marker, preserving
   existing project hooks across repeated installation.
 - Per-night SkillOpt-Sleep `evidence.jsonl` chains for reconstructing harvest,
