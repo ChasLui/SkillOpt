@@ -60,8 +60,10 @@ def _split(tasks: List[TaskRecord]) -> Tuple[List[TaskRecord], List[TaskRecord],
 
     ``holdout_leaked`` is True when val is not disjoint from train — i.e. the
     gate would score the very tasks the edits were derived from. A single mined
-    task always lands here. Such a comparison cannot detect overfitting, so the
-    caller must not treat it as validation.
+    task that carries a train/val (or legacy) split always lands here; a lone
+    ``test`` task instead yields empty train/val and no gate, so it is not
+    flagged as leaked. Such a non-disjoint comparison cannot detect overfitting,
+    so the caller must not treat it as validation.
     """
     def _norm(s: str) -> str:
         return {"replay": "train", "holdout": "val"}.get(s, s)
