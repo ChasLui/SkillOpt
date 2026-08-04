@@ -30,9 +30,11 @@ from skillopt_sleep.harvest import (
 from skillopt_sleep.types import SessionDigest
 
 # Bound per-session text so one pathological session cannot dominate a night's
-# harvest. Mining only needs intent, not a full transcript.
+# harvest. Mining only needs intent, not a full transcript. Only the final few
+# assistant answers matter downstream (mining reads assistant_finals[-1]), so
+# we keep just the last few, consistent with the other harvesters.
 _MAX_PROMPTS_PER_SESSION = 40
-_MAX_FINALS_PER_SESSION = 40
+_MAX_FINALS_PER_SESSION = 5
 _MAX_TEXT_CHARS = 4000
 
 
@@ -80,7 +82,7 @@ def _connect(store_path: str) -> tuple[sqlite3.Connection, Optional[str]]:
     Returns the connection and the temp directory to clean up, if any.
     """
     try:
-        con = sqlite3.connect(_ro_uri(store_path), uri=True)
+        con = sqlite3.connect(_ro_uri(store_path), uri=True, timeout=0)
         con.execute("SELECT 1 FROM sessions LIMIT 1").fetchone()
         return con, None
     except sqlite3.Error:
@@ -93,7 +95,7 @@ def _connect(store_path: str) -> tuple[sqlite3.Connection, Optional[str]]:
         sidecar = store_path + suffix
         if os.path.exists(sidecar):
             shutil.copyfile(sidecar, snapshot + suffix)
-    return sqlite3.connect(_ro_uri(snapshot), uri=True), tmpdir
+    return sqlite3.connect(_ro_uri(snapshot), uri=True, timeout=0), tmpdir
 
 
 def harvest_copilot_cli(
@@ -120,9 +122,12 @@ def harvest_copilot_cli(
         params: list[Any] = []
         where = ""
         if since_iso:
+            # since_iso is a cutoff on when a session *ended*, matching the
+            # other harvesters; filter on updated_at so a long-lived session
+            # that started earlier but ended after the cutoff is still kept.
             # Timestamps mix "YYYY-MM-DD HH:MM:SS" and ISO-8601 text, which only
             # compare safely at day granularity.
-            where = "WHERE substr(created_at, 1, 10) >= substr(?, 1, 10)"
+            where = "WHERE substr(updated_at, 1, 10) >= substr(?, 1, 10)"
             params.append(since_iso)
         rows = con.execute(
             "SELECT id, cwd, repository, branch, created_at, updated_at "
@@ -161,8 +166,11 @@ def harvest_copilot_cli(
                 asst_text = _clip(turn["assistant_response"])
                 if asst_text:
                     n_asst += 1
-                    if len(finals) < _MAX_FINALS_PER_SESSION:
-                        finals.append(asst_text)
+                    # Keep only the last few answers (rolling window) so a long
+                    # session does not balloon the digest.
+                    finals.append(asst_text)
+                    if len(finals) > _MAX_FINALS_PER_SESSION:
+                        finals.pop(0)
 
             if not prompts:
                 continue

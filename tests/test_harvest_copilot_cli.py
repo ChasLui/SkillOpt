@@ -177,14 +177,46 @@ def test_short_programmatic_sessions_are_filtered(tmp_path) -> None:
     assert harvest_copilot_cli(path, scope="all") == []
 
 
-@pytest.mark.parametrize("source", ["copilot_cli"])
-def test_source_is_registered(source: str) -> None:
+def test_copilot_cli_source_dispatches_via_harvest_for_config(monkeypatch) -> None:
+    # Behavior over text: harvest_for_config must actually route
+    # transcript_source="copilot_cli" to the harvester with the config's args.
     from skillopt_sleep import harvest_sources
+    from skillopt_sleep.config import SleepConfig
 
-    with open(harvest_sources.__file__, encoding="utf-8") as fh:
-        text = fh.read()
-    assert f'source == "{source}"' in text
-    assert "harvest_copilot_cli" in text
+    seen: dict = {}
+
+    def _fake(store, *, scope, invoked_project, since_iso, limit):
+        seen.update(
+            store=store, scope=scope, invoked_project=invoked_project,
+            since_iso=since_iso, limit=limit,
+        )
+        return ["digest"]
+
+    monkeypatch.setattr(harvest_sources, "harvest_copilot_cli", _fake)
+    cfg = SleepConfig()
+    cfg.data["transcript_source"] = "copilot_cli"
+    cfg.data["copilot_cli_session_store"] = r"C:\x\store.db"
+    cfg.data["projects"] = "all"
+
+    out = harvest_sources.harvest_for_config(cfg, since_iso="2026-01-01", limit=5)
+    assert out == ["digest"]
+    assert seen["store"] == r"C:\x\store.db"
+    assert seen["scope"] == "all"
+    assert seen["since_iso"] == "2026-01-01"
+    assert seen["limit"] == 5
+
+
+def test_since_iso_filters_on_session_end_not_start(tmp_path) -> None:
+    # A long-lived session that started before the cutoff but ended after it
+    # must be kept (filter is on updated_at, not created_at).
+    path = _store(
+        tmp_path,
+        [("long", r"C:\p", "", "", "2026-04-30 23:00:00", "2026-05-02 01:00:00")],
+        [("long", 0, "a task spanning the cutoff", "ok", "2026-04-30 23:00:00")],
+    )
+    ids = [d.session_id for d in harvest_copilot_cli(path, scope="all", since_iso="2026-05-01")]
+    assert ids == ["long"]
+
 
 
 def test_session_without_cwd_is_skipped(tmp_path) -> None:
