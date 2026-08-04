@@ -18,6 +18,7 @@ import shutil
 import sqlite3
 import tempfile
 from typing import Any, List, Optional
+from urllib.request import pathname2url
 
 from skillopt_sleep.harvest import (
     _detect_feedback,
@@ -47,13 +48,39 @@ def _clip(text: Any) -> str:
     return text[:_MAX_TEXT_CHARS]
 
 
+def _ro_uri(path: str) -> str:
+    """Build a read-only ``file:`` URI from a filesystem path.
+
+    String-interpolating a raw path breaks on Windows (backslashes, ``C:``
+    drive letters) and on any path containing URI-special characters, and can
+    silently prevent the read-only open. ``pathname2url`` produces a correctly
+    escaped, absolute URI on every platform.
+    """
+    return "file:" + pathname2url(os.path.abspath(path)) + "?mode=ro"
+
+
+def _norm_ts(value: Any) -> str:
+    """Normalize ``YYYY-MM-DD HH:MM:SS`` to ISO ``T`` form.
+
+    The Copilot CLI store uses a space separator, but the shared
+    :func:`_is_headless_replay` duration heuristic strptimes a ``T``-separated
+    timestamp; without this, short programmatic sessions slip past the filter.
+    """
+    if not isinstance(value, str):
+        return ""
+    v = value.strip()
+    if len(v) >= 19 and v[10] == " ":
+        v = v[:10] + "T" + v[11:]
+    return v
+
+
 def _connect(store_path: str) -> tuple[sqlite3.Connection, Optional[str]]:
     """Open ``store_path`` read-only, snapshotting if the live WAL blocks it.
 
     Returns the connection and the temp directory to clean up, if any.
     """
     try:
-        con = sqlite3.connect(f"file:{store_path}?mode=ro", uri=True)
+        con = sqlite3.connect(_ro_uri(store_path), uri=True)
         con.execute("SELECT 1 FROM sessions LIMIT 1").fetchone()
         return con, None
     except sqlite3.Error:
@@ -66,7 +93,7 @@ def _connect(store_path: str) -> tuple[sqlite3.Connection, Optional[str]]:
         sidecar = store_path + suffix
         if os.path.exists(sidecar):
             shutil.copyfile(sidecar, snapshot + suffix)
-    return sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True), tmpdir
+    return sqlite3.connect(_ro_uri(snapshot), uri=True), tmpdir
 
 
 def harvest_copilot_cli(
@@ -82,7 +109,12 @@ def harvest_copilot_cli(
     if not os.path.isfile(store_path):
         return []
 
-    con, tmpdir = _connect(store_path)
+    try:
+        con, tmpdir = _connect(store_path)
+    except (sqlite3.Error, OSError):
+        # A harvest must never block or abort a run: a locked, unreadable, or
+        # permission-denied store simply yields no digests.
+        return []
     try:
         con.row_factory = sqlite3.Row
         params: list[Any] = []
@@ -100,7 +132,12 @@ def harvest_copilot_cli(
 
         digests: List[SessionDigest] = []
         for row in rows:
-            project = row["cwd"] or row["repository"] or ""
+            # A session without a stable cwd cannot be scoped (_project_matches
+            # needs an abspath) and would collide with others when mine.py
+            # hashes project+intent, so skip it -- as harvest_copilot() does.
+            project = row["cwd"]
+            if not project:
+                continue
             if not _project_matches(project, scope, invoked_project):
                 continue
 
@@ -154,8 +191,8 @@ def harvest_copilot_cli(
                     session_id=str(row["id"]),
                     project=project,
                     git_branch=row["branch"] or "",
-                    started_at=row["created_at"] or "",
-                    ended_at=row["updated_at"] or "",
+                    started_at=_norm_ts(row["created_at"]),
+                    ended_at=_norm_ts(row["updated_at"]),
                     user_prompts=prompts,
                     assistant_finals=finals,
                     tools_used=tools,

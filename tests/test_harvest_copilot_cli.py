@@ -151,7 +151,7 @@ def test_since_iso_compares_at_day_granularity(tmp_path) -> None:
 
 
 def test_limit_caps_results(tmp_path) -> None:
-    sessions = [(f"s{i}", r"C:\p", "", "", f"2026-01-0{i} 10:00:00", f"2026-01-0{i} 10:00:00") for i in range(1, 6)]
+    sessions = [(f"s{i}", r"C:\p", "", "", f"2026-01-0{i} 10:00:00", f"2026-01-0{i} 10:30:00") for i in range(1, 6)]
     turns = [(f"s{i}", 0, f"task {i}", "ok", f"2026-01-0{i} 10:00:00") for i in range(1, 6)]
     path = _store(tmp_path, sessions, turns)
     assert len(harvest_copilot_cli(path, scope="all", limit=2)) == 2
@@ -181,6 +181,44 @@ def test_short_programmatic_sessions_are_filtered(tmp_path) -> None:
 def test_source_is_registered(source: str) -> None:
     from skillopt_sleep import harvest_sources
 
-    text = open(harvest_sources.__file__, encoding="utf-8").read()
+    with open(harvest_sources.__file__, encoding="utf-8") as fh:
+        text = fh.read()
     assert f'source == "{source}"' in text
     assert "harvest_copilot_cli" in text
+
+
+def test_session_without_cwd_is_skipped(tmp_path) -> None:
+    # No stable cwd -> not scopable and would collide on project+intent hashing.
+    path = _store(
+        tmp_path,
+        [("nocwd", None, "owner/repo", "main", "2026-01-01 10:00:00", "2026-01-01 10:30:00")],
+        [("nocwd", 0, "do a real task here", "ok", "2026-01-01 10:00:00")],
+    )
+    assert harvest_copilot_cli(path, scope="all") == []
+
+
+def test_short_session_with_space_timestamps_is_filtered(tmp_path) -> None:
+    # The store uses a space separator; normalization must let the sub-3-second
+    # replay heuristic fire just as it does for 'T'-separated ISO timestamps.
+    path = _store(
+        tmp_path,
+        [("quick", r"C:\p", "", "", "2026-01-01 10:00:00", "2026-01-01 10:00:01")],
+        [("quick", 0, "ping", "pong", "2026-01-01 10:00:00")],
+    )
+    assert harvest_copilot_cli(path, scope="all") == []
+
+
+def test_connect_failure_fails_closed(tmp_path, monkeypatch) -> None:
+    # A locked/unreadable store must yield nothing rather than abort the run.
+    path = _store(
+        tmp_path,
+        [("s1", r"C:\p", "", "", "2026-01-01 10:00:00", "2026-01-01 10:30:00")],
+        [("s1", 0, "a real task", "ok", "2026-01-01 10:00:00")],
+    )
+
+    def _boom(_store_path):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr("skillopt_sleep.harvest_copilot_cli._connect", _boom)
+    assert harvest_copilot_cli(path, scope="all") == []
+
