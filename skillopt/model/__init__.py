@@ -549,6 +549,17 @@ def get_token_summary() -> dict:
         summary[stage]["prompt_tokens"] += values["prompt_tokens"]
         summary[stage]["completion_tokens"] += values["completion_tokens"]
         summary[stage]["total_tokens"] += values["total_tokens"]
+    copilot_summary = _copilot.get_token_summary()
+    for stage, values in copilot_summary.items():
+        if stage == "_total":
+            continue
+        if stage not in summary:
+            summary[stage] = values
+            continue
+        summary[stage]["calls"] += values["calls"]
+        summary[stage]["prompt_tokens"] += values["prompt_tokens"]
+        summary[stage]["completion_tokens"] += values["completion_tokens"]
+        summary[stage]["total_tokens"] += values["total_tokens"]
     total = {
         "calls": 0,
         "prompt_tokens": 0,
@@ -573,6 +584,7 @@ def reset_token_tracker() -> None:
     _minimax.reset_token_tracker()
     _openai_compat.reset_token_tracker()
     _codex.reset_token_tracker()
+    _copilot.reset_token_tracker()
 
 
 def configure_azure_openai(

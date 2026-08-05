@@ -40,6 +40,9 @@ def restore_backend_state() -> Iterator[None]:
         )
     }
     yield
+    # copilot_backend records call counts, and those now feed the aggregate
+    # model.get_token_summary(); leaving them behind pollutes other suites.
+    copilot_backend.reset_token_tracker()
     backend_config.OPTIMIZER_BACKEND = optimizer_backend
     backend_config.TARGET_BACKEND = target_backend
     backend_config.COPILOT_EXEC_PATH = copilot_path
@@ -160,6 +163,23 @@ def test_run_copilot_exec_builds_isolated_readonly_command(monkeypatch, tmp_path
     # Read-only rollout must NOT bypass the CLI approval gate.
     assert "--allow-all-tools" not in cmd
     assert captured["env"]["COPILOT_HOME"] == str(tmp_path / "home")
+
+
+def test_copilot_chat_calls_reach_the_aggregate_token_summary(monkeypatch) -> None:
+    # The CLI reports no token counts (documented caveat), but the call counts
+    # are real and must not be dropped from the run's token snapshots.
+    model.set_backend("copilot")
+    model.reset_token_tracker()
+    monkeypatch.setattr(copilot_backend, "_invoke", lambda *a, **k: "hi")
+
+    model.chat_target(system="s", user="u", stage="target")
+
+    summary = model.get_token_summary()
+    assert summary["target"]["calls"] >= 1
+    assert summary["_total"]["calls"] >= 1
+
+    model.reset_token_tracker()
+    assert model.get_token_summary()["_total"]["calls"] == 0
 
 
 def test_config_default_does_not_clobber_the_env_opt_in() -> None:

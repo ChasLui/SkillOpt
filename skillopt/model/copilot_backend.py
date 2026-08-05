@@ -213,3 +213,16 @@ def chat_target_messages(
         model=str(config.get("target_model") or ""),
         timeout=timeout,
     )
+
+
+def get_token_summary() -> dict[str, dict[str, int]]:
+    """Per-stage usage, like every other backend.
+
+    The Copilot CLI reports no token counts, so the token fields stay zero, but
+    the *call* counts are real and belong in the run's token snapshots.
+    """
+    return tracker.summary()
+
+
+def reset_token_tracker() -> None:
+    tracker.reset()
