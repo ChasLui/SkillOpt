@@ -59,6 +59,9 @@ def _mk_task(d: SessionDigest, obj: Dict[str, Any], idx: int) -> TaskRecord | No
     # the accepted shapes aligned with validate_checks() so a mined tasks file
     # never fails validation later (it rejects bools and negative bounds).
     _needs_str_arg = {"section_present", "regex", "contains", "not_contains", "tool_called"}
+    # Trimming a regex would change what it matches (leading/trailing spaces are
+    # significant in a pattern), so only substring/tool/heading args are stripped.
+    _strip_arg = _needs_str_arg - {"regex"}
     clean_checks = []
     for c in checks:
         if not isinstance(c, dict):
@@ -69,7 +72,9 @@ def _mk_task(d: SessionDigest, obj: Dict[str, Any], idx: int) -> TaskRecord | No
             # Store the stripped value: stray whitespace would otherwise become
             # part of the required substring / tool name.
             if isinstance(arg, str) and arg.strip():
-                clean_checks.append({"op": op, "arg": arg.strip()})
+                clean_checks.append(
+                    {"op": op, "arg": arg.strip() if op in _strip_arg else arg}
+                )
         elif op in {"max_chars", "min_chars"}:
             # Shared parser with validate_checks() so the two cannot drift:
             # rejects bools, non-integral floats and inf/nan (OverflowError).

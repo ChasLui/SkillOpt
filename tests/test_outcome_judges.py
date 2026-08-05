@@ -300,6 +300,30 @@ def test_miner_strips_string_args() -> None:
     assert task.judge["checks"] == [{"op": "contains", "arg": "DEFAULT"}]
 
 
+def test_miner_preserves_regex_whitespace() -> None:
+    # Trimming a regex changes what it matches, so the pattern is kept verbatim
+    # even though other string args are stripped.
+    pattern = r"\bfoo\s+$"
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [{"op": "regex", "arg": pattern}, {"op": "contains", "arg": " x "}],
+            "rubric": "",
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    assert task.judge["checks"] == [
+        {"op": "regex", "arg": pattern},
+        {"op": "contains", "arg": "x"},
+    ]
+    errors, _ = validate_checks(task.judge)
+    assert errors == []
+
+
+
 def test_mined_checks_always_pass_validate_checks() -> None:
     # The miner must never emit a judge that validate_checks() later rejects:
     # bools (int subclass) and negative bounds are errors there.
