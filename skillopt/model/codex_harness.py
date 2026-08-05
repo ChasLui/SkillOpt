@@ -1404,7 +1404,11 @@ def run_copilot_exec(
             return response, combined
 
     combined = "\n\n".join(all_raw)
-    raise RuntimeError(last_error)
+    # Without this the caller gets a bare "returned no response" and no CLI
+    # output at all, since copilot_exec persists no artifacts; include a
+    # bounded tail so an empty/invalid JSONL stream is debuggable.
+    detail = combined.strip()[-4000:]
+    raise RuntimeError(f"{last_error}\n{detail}" if detail else last_error)
 
 
 def _parse_copilot_jsonl(raw: str) -> str:

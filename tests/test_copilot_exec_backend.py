@@ -162,6 +162,22 @@ def test_run_copilot_exec_builds_isolated_readonly_command(monkeypatch, tmp_path
     assert captured["env"]["COPILOT_HOME"] == str(tmp_path / "home")
 
 
+def test_no_response_error_includes_cli_output(monkeypatch, tmp_path) -> None:
+    # copilot_exec persists no artifacts, so a bare "returned no response"
+    # would leave an empty/invalid JSONL stream undebuggable.
+    model.set_backend("copilot")
+    model.configure_copilot_exec(path="copilot", home="", allow_all_tools=False)
+    captured: dict = {}
+    noise = '{"type":"tool.call","data":{"content":"NOISE-MARKER"}}'
+    monkeypatch.setattr(harness.subprocess, "run", _fake_run(captured, noise))
+
+    with pytest.raises(RuntimeError) as exc:
+        harness.run_copilot_exec(work_dir=str(tmp_path), prompt="p", model="", timeout=30)
+
+    assert "returned no response" in str(exc.value)
+    assert "NOISE-MARKER" in str(exc.value)
+
+
 def test_allow_all_tools_requires_both_opt_in_and_file_edits(monkeypatch, tmp_path) -> None:
     model.set_backend("copilot")
     stdout = json.dumps({"type": "assistant.message", "data": {"content": "ok"}})
