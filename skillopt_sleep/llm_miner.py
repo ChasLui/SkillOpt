@@ -54,7 +54,9 @@ def _mk_task(d: SessionDigest, obj: Dict[str, Any], idx: int) -> TaskRecord | No
 
     # Keep only well-formed checks: the scorer runs these verbatim during
     # replay, so a max_chars/min_chars with a non-integer arg (or an arg-less
-    # op that needs one) would crash or fail forever. Drop those here.
+    # op that needs one) would crash or fail forever. Drop those here, and keep
+    # the accepted shapes aligned with validate_checks() so a mined tasks file
+    # never fails validation later (it rejects bools and negative bounds).
     _needs_str_arg = {"section_present", "regex", "contains", "not_contains", "tool_called"}
     clean_checks = []
     for c in checks:
@@ -63,13 +65,21 @@ def _mk_task(d: SessionDigest, obj: Dict[str, Any], idx: int) -> TaskRecord | No
         op = c.get("op")
         arg = c.get("arg")
         if op in _needs_str_arg:
+            # Store the stripped value: stray whitespace would otherwise become
+            # part of the required substring / tool name.
             if isinstance(arg, str) and arg.strip():
-                clean_checks.append({"op": op, "arg": arg})
+                clean_checks.append({"op": op, "arg": arg.strip()})
         elif op in {"max_chars", "min_chars"}:
+            # bool is a subclass of int, so int(True) would silently become 1.
+            if isinstance(arg, bool):
+                continue
             try:
-                clean_checks.append({"op": op, "arg": int(arg)})
+                bound = int(arg)
             except (TypeError, ValueError):
                 continue
+            if bound < 0:
+                continue
+            clean_checks.append({"op": op, "arg": bound})
         elif op == "no_refusal":
             clean_checks.append({"op": op, "arg": None})
 

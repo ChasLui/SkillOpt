@@ -282,3 +282,43 @@ def test_miner_drops_malformed_char_checks() -> None:
     # only the coercible min_chars survives, normalized to an int
     assert task.judge["checks"] == [{"op": "min_chars", "arg": 50}]
 
+
+def test_miner_strips_string_args() -> None:
+    # Stray whitespace would otherwise become part of the required substring.
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [{"op": "contains", "arg": "  DEFAULT  "}],
+            "rubric": "",
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    assert task.judge["checks"] == [{"op": "contains", "arg": "DEFAULT"}]
+
+
+def test_mined_checks_always_pass_validate_checks() -> None:
+    # The miner must never emit a judge that validate_checks() later rejects:
+    # bools (int subclass) and negative bounds are errors there.
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [
+                {"op": "max_chars", "arg": True},
+                {"op": "min_chars", "arg": -5},
+                {"op": "contains", "arg": " ok "},
+            ],
+            "rubric": "",
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    assert task.judge["checks"] == [{"op": "contains", "arg": "ok"}]
+    errors, _ = validate_checks(task.judge)
+    assert errors == []
+
+
