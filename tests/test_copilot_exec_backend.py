@@ -162,6 +162,25 @@ def test_run_copilot_exec_builds_isolated_readonly_command(monkeypatch, tmp_path
     assert captured["env"]["COPILOT_HOME"] == str(tmp_path / "home")
 
 
+def test_config_default_does_not_clobber_the_env_opt_in() -> None:
+    # The shipped base config must not pin this to false: trainer.py and
+    # eval_only.py pass cfg.get("copilot_exec_allow_all_tools") straight into
+    # configure_copilot_exec(), and a non-None value overwrites the env var --
+    # which would make the documented COPILOT_EXEC_ALLOW_ALL_TOOLS=1 opt-in
+    # impossible. null leaves the env (default off) in charge.
+    import yaml
+
+    root = Path(__file__).resolve().parent.parent
+    with open(root / "configs" / "_base_" / "default.yaml", encoding="utf-8") as fh:
+        base = yaml.safe_load(fh)
+    assert base["model"]["copilot_exec_allow_all_tools"] is None
+
+    # None must be a no-op, so a prior opt-in survives.
+    model.configure_copilot_exec(allow_all_tools=True)
+    model.configure_copilot_exec(allow_all_tools=None)
+    assert backend_config.COPILOT_EXEC_ALLOW_ALL_TOOLS == "1"
+
+
 def test_copilot_backends_keep_a_real_deployment_fallback() -> None:
     # This table also feeds the shared Azure deployment fallback in the entry
     # points (cfg.get("optimizer_model", default_model_for_backend(backend))),

@@ -30,7 +30,8 @@ model:
   # which is the only fully local (no cloud API key) configuration.
   copilot_exec_path: ""              # blank uses COPILOT_EXEC_PATH or copilot
   copilot_exec_home: ""              # blank leaves COPILOT_HOME untouched
-  copilot_exec_allow_all_tools: false  # copilot_exec only; required for file-edit rollouts
+  copilot_exec_allow_all_tools: null   # blank uses COPILOT_EXEC_ALLOW_ALL_TOOLS (default off);
+                                       # copilot_exec only, required for file-edit rollouts
   copilot_chat_optimizer_model: ""   # blank lets the CLI pick its default model
   copilot_chat_target_model: ""
   copilot_chat_timeout: 0            # 0 uses COPILOT_CHAT_TIMEOUT or the built-in default
