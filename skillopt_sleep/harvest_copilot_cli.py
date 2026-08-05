@@ -79,23 +79,35 @@ def _norm_ts(value: Any) -> str:
 def _connect(store_path: str) -> tuple[sqlite3.Connection, Optional[str]]:
     """Open ``store_path`` read-only, snapshotting if the live WAL blocks it.
 
-    Returns the connection and the temp directory to clean up, if any.
+    Returns the connection and the temp directory to clean up, if any. On any
+    failure the temp directory is removed and the error is re-raised so the
+    caller can fail closed.
     """
+    con = None
     try:
         con = sqlite3.connect(_ro_uri(store_path), uri=True, timeout=0)
         con.execute("SELECT 1 FROM sessions LIMIT 1").fetchone()
         return con, None
     except sqlite3.Error:
-        pass
+        # Close the half-open connection before falling back to a snapshot.
+        if con is not None:
+            con.close()
 
     tmpdir = tempfile.mkdtemp(prefix="skillopt-sleep-copilot-cli-")
-    snapshot = os.path.join(tmpdir, "session-store.db")
-    shutil.copyfile(store_path, snapshot)
-    for suffix in ("-wal", "-shm"):
-        sidecar = store_path + suffix
-        if os.path.exists(sidecar):
-            shutil.copyfile(sidecar, snapshot + suffix)
-    return sqlite3.connect(_ro_uri(snapshot), uri=True, timeout=0), tmpdir
+    try:
+        snapshot = os.path.join(tmpdir, "session-store.db")
+        shutil.copyfile(store_path, snapshot)
+        for suffix in ("-wal", "-shm"):
+            sidecar = store_path + suffix
+            if os.path.exists(sidecar):
+                shutil.copyfile(sidecar, snapshot + suffix)
+        snap_con = sqlite3.connect(_ro_uri(snapshot), uri=True, timeout=0)
+        # Validate the snapshot schema too, so a later query cannot abort the run.
+        snap_con.execute("SELECT 1 FROM sessions LIMIT 1").fetchone()
+        return snap_con, tmpdir
+    except (sqlite3.Error, OSError):
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise
 
 
 def harvest_copilot_cli(
@@ -178,7 +190,8 @@ def harvest_copilot_cli(
             files = [
                 r["file_path"]
                 for r in con.execute(
-                    "SELECT DISTINCT file_path FROM session_files WHERE session_id = ?",
+                    "SELECT DISTINCT file_path FROM session_files "
+                    "WHERE session_id = ? ORDER BY file_path",
                     (row["id"],),
                 )
                 if r["file_path"]
@@ -219,6 +232,9 @@ def harvest_copilot_cli(
             if limit and len(digests) >= limit:
                 break
         return digests
+    except sqlite3.Error:
+        # Schema drift or mid-read corruption must not abort the run.
+        return []
     finally:
         con.close()
         if tmpdir:

@@ -3,8 +3,6 @@ from __future__ import annotations
 import os
 import sqlite3
 
-import pytest
-
 from skillopt_sleep.harvest_copilot_cli import default_session_store, harvest_copilot_cli
 
 _SCHEMA = """
@@ -216,6 +214,22 @@ def test_since_iso_filters_on_session_end_not_start(tmp_path) -> None:
     )
     ids = [d.session_id for d in harvest_copilot_cli(path, scope="all", since_iso="2026-05-01")]
     assert ids == ["long"]
+
+
+def test_query_error_mid_read_fails_closed(tmp_path) -> None:
+    # The sessions schema validates, but a missing turns table makes the
+    # per-session query raise mid-read; the harvest must yield [] rather than
+    # abort the run.
+    path = _store(
+        tmp_path,
+        [("s1", r"C:\p", "", "", "2026-01-01 10:00:00", "2026-01-01 10:30:00")],
+        [("s1", 0, "a real task", "ok", "2026-01-01 10:00:00")],
+    )
+    con = sqlite3.connect(path)
+    con.execute("DROP TABLE turns")
+    con.commit()
+    con.close()
+    assert harvest_copilot_cli(path, scope="all") == []
 
 
 
