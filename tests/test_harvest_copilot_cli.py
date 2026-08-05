@@ -198,7 +198,9 @@ def test_copilot_cli_source_dispatches_via_harvest_for_config(monkeypatch) -> No
 
     out = harvest_sources.harvest_for_config(cfg, since_iso="2026-01-01", limit=5)
     assert out == ["digest"]
-    assert seen["store"] == r"C:\x\store.db"
+    # harvest_for_config passes the normalized config property (abspath/expanduser),
+    # so compare against that rather than the raw string to stay cross-platform.
+    assert seen["store"] == cfg.copilot_cli_session_store
     assert seen["scope"] == "all"
     assert seen["since_iso"] == "2026-01-01"
     assert seen["limit"] == 5
