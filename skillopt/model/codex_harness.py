@@ -1376,18 +1376,9 @@ def run_copilot_exec(
                 errors="replace",
                 env=env,
             )
-        except subprocess.TimeoutExpired as exc:
-            raw = exc.stdout or ""
-            if isinstance(raw, bytes):
-                raw = raw.decode("utf-8", "replace")
-            # Copilot can report the cause on stderr before timing out; the
-            # other exec harnesses capture it, so this must too.
-            err = exc.stderr or ""
-            if isinstance(err, bytes):
-                err = err.decode("utf-8", "replace")
-            if err:
-                raw = f"{raw}\n[stderr]\n{err}" if raw else f"[stderr]\n{err}"
-            all_raw.append(f"===== COPILOT CLI ATTEMPT {attempt + 1} =====\n{raw}")
+        except subprocess.TimeoutExpired:
+            # Nothing to capture here: all_raw is local and this path re-raises,
+            # and TimeoutExpired already carries .stdout/.stderr for the caller.
             raise
         except OSError as exc:
             raise RuntimeError(f"Copilot CLI could not be executed: {exc}") from exc
