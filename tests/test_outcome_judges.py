@@ -39,6 +39,10 @@ def test_not_contains_passes_when_absent_and_fails_when_present() -> None:
         "Cannot complete this task. There is no benchmark spec in scope.",
         "I cannot help with that.",
         "I'm unable to do this.",
+        "> I cannot help with that.",
+        "- I cannot help with that.",
+        "1. I cannot help with that.",
+        "**Sorry, I can't** do this.",
         "",
     ],
 )

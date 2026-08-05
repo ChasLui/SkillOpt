@@ -71,7 +71,10 @@ def _is_refusal(response: str) -> bool:
     text = (response or "").strip()
     if not text:
         return True
-    head = text[:160].lower().lstrip("*_# ")
+    # Strip leading markdown markers -- blockquote (>), list bullets (-, *),
+    # numbered items (1. / 1)), emphasis and headings -- so a refusal formatted
+    # as "> I cannot ..." or "- I cannot ..." is still recognized.
+    head = re.sub(r"^(?:[>\-*_#\s]|\d+[.)])+", "", text[:160].lower())
     if not any(head.startswith(p) for p in _REFUSAL_PREFIXES):
         return False
     # A long response that opens with an abstention still did the work of

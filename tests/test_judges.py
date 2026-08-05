@@ -9,7 +9,7 @@ import unittest
 
 import pytest
 
-from skillopt_sleep.judges import KNOWN_OPS, score_rule_judge, validate_checks
+from skillopt_sleep.judges import KNOWN_OPS, SHAPE_OPS, score_rule_judge, validate_checks
 from skillopt_sleep.tasks_file import load_tasks_file
 
 
@@ -180,9 +180,14 @@ class TestValidateChecks(unittest.TestCase):
             arg = 1 if op.endswith("_chars") else "x"
             errors, warnings = validate_checks({"checks": [{"op": op, "arg": arg}]})
             self.assertEqual(errors, [], op)
-            # A lone formatting op is still accepted, but is now flagged as
-            # gameable; no other warning should fire.
-            self.assertTrue(all("shape-only" in w for w in warnings), (op, warnings))
+            if op in SHAPE_OPS:
+                # A lone formatting op is still accepted, but is now flagged as
+                # gameable -- exactly the shape-only warning must fire.
+                self.assertTrue(warnings, (op, warnings))
+                self.assertTrue(all("shape-only" in w for w in warnings), (op, warnings))
+            else:
+                # An outcome op is real signal; it must not warn.
+                self.assertEqual(warnings, [], (op, warnings))
 
 
 @pytest.mark.parametrize("bad_judge", [[], "", 0])
