@@ -20,7 +20,7 @@ def force_utf8_stdout_stderr() -> None:
         reconfigure: Any = getattr(stream, "reconfigure", None)
         if reconfigure is None:
             continue
-        if (getattr(stream, "encoding", "") or "").lower().replace("-", "") == "utf8":
+        if (getattr(stream, "encoding", "") or "").lower().replace("-", "").replace("_", "") == "utf8":
             continue
         try:
             reconfigure(encoding="utf-8", errors="replace")

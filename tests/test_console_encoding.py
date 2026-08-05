@@ -45,3 +45,27 @@ def test_cp1252_console_survives_arrow_output() -> None:
     buf.reconfigure(encoding="utf-8", errors="replace")
     buf.write("[2/6 REFLECT] failure=0→0 groups — SkillOpt")
     buf.flush()
+
+
+@pytest.mark.parametrize(
+    ("encoding", "expect_reconfigure"),
+    [("cp1252", True), ("utf-8", False), ("utf_8", False), ("UTF8", False)],
+)
+def test_helper_skips_streams_already_utf8(encoding, expect_reconfigure, monkeypatch) -> None:
+    from skillopt.utils.console import force_utf8_stdout_stderr
+
+    recorded: list[dict] = []
+
+    class _Stream:
+        def __init__(self, enc):
+            self.encoding = enc
+
+        def reconfigure(self, **kwargs):
+            recorded.append(kwargs)
+
+    monkeypatch.setattr(sys, "stdout", _Stream(encoding))
+    monkeypatch.setattr(sys, "stderr", _Stream(encoding))
+    force_utf8_stdout_stderr()
+
+    assert bool(recorded) is expect_reconfigure
+
