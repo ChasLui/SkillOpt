@@ -159,3 +159,27 @@ def test_not_validated_banner_shown_only_when_gate_is_on() -> None:
     # In greedy mode the gate does no scoring, so the "gate scored the same
     # tasks" banner would be misleading and must be suppressed.
     assert "Not validated" not in off
+
+
+def test_leaked_edits_are_labeled_unverified_not_rejected() -> None:
+    from skillopt_sleep.config import SleepConfig
+    from skillopt_sleep.cycle import _render_report_md
+    from skillopt_sleep.types import EditRecord, SleepReport
+
+    edit = EditRecord(target="skill", op="add", content="a suggestion")
+
+    leaked = SleepReport(
+        night=1, project="/p", holdout_leaked=True, rejected_edits=[edit],
+    )
+    md = _render_report_md(leaked, SleepConfig())
+    # On a leaked-holdout night the gate abstained; the surfaced edits are
+    # unverified suggestions, not rejections/negative feedback.
+    assert "Unverified suggestions" in md
+    assert "negative feedback" not in md
+
+    genuine = SleepReport(
+        night=1, project="/p", holdout_leaked=False, rejected_edits=[edit],
+    )
+    md2 = _render_report_md(genuine, SleepConfig())
+    assert "negative feedback" in md2
+

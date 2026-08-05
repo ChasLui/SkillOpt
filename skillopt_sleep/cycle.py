@@ -176,12 +176,14 @@ def _render_report_md(report: SleepReport, cfg: SleepConfig) -> str:
     gate_on = str(cfg.get("gate_mode", "on")).strip().lower() not in {
         "off", "none", "false", "greedy",
     }
-    if report.holdout_leaked and gate_on:
+    leaked_banner = report.holdout_leaked and gate_on
+    if leaked_banner:
         lines[-1:] = [
-            "> **Not validated.** The gate scored the same tasks the optimizer "
-            "saw, so the comparison above cannot detect overfitting. Mine more "
-            "tasks so a disjoint validation slice exists. Any edits below are "
-            "unverified suggestions.",
+            "> **Not validated.** The gate's validation slice was not disjoint "
+            "from the tasks the optimizer saw (an overlapping set), so the "
+            "comparison above cannot detect overfitting. Mine more tasks so a "
+            "disjoint validation slice exists. Any edits below are unverified "
+            "suggestions, not rejections.",
             "",
         ]
     if report.edits:
@@ -190,7 +192,12 @@ def _render_report_md(report: SleepReport, cfg: SleepConfig) -> str:
             lines.append(f"- [{e.target}/{e.op}] {e.content}  \n  _why: {e.rationale}_")
         lines.append("")
     if report.rejected_edits:
-        lines.append("## Rejected by gate (kept as negative feedback)")
+        # On a leaked-holdout night the gate abstained rather than rejecting, so
+        # these edits are unverified suggestions, not negative feedback.
+        if leaked_banner:
+            lines.append("## Unverified suggestions (not validated — review before adopting)")
+        else:
+            lines.append("## Rejected by gate (kept as negative feedback)")
         for e in report.rejected_edits:
             lines.append(f"- [{e.target}/{e.op}] {e.content}")
         lines.append("")
