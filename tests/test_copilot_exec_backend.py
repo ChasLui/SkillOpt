@@ -162,8 +162,20 @@ def test_run_copilot_exec_builds_isolated_readonly_command(monkeypatch, tmp_path
     assert captured["env"]["COPILOT_HOME"] == str(tmp_path / "home")
 
 
-def test_no_response_error_includes_cli_output(monkeypatch, tmp_path) -> None:
-    # copilot_exec persists no artifacts, so a bare "returned no response"
+def test_copilot_backends_keep_a_real_deployment_fallback() -> None:
+    # This table also feeds the shared Azure deployment fallback in the entry
+    # points (cfg.get("optimizer_model", default_model_for_backend(backend))),
+    # and the shipped base config sets no optimizer_model/target_model -- so a
+    # "" here left `--backend copilot_exec` with an EMPTY optimizer deployment
+    # even though that role is still a real openai_chat model. The CLI's own
+    # model comes from copilot_chat_optimizer_model / _target_model instead.
+    from skillopt.model.common import default_model_for_backend
+
+    assert default_model_for_backend("copilot_exec") == "gpt-4o"
+    assert default_model_for_backend("copilot_chat") == "gpt-4o"
+
+
+def test_no_response_error_includes_cli_output(monkeypatch, tmp_path) -> None:    # copilot_exec persists no artifacts, so a bare "returned no response"
     # would leave an empty/invalid JSONL stream undebuggable.
     model.set_backend("copilot")
     model.configure_copilot_exec(path="copilot", home="", allow_all_tools=False)
