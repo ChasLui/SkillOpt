@@ -202,6 +202,9 @@ def test_copilot_alias_selects_fully_local_chat_backend() -> None:
     assert backend_config.is_optimizer_chat_backend() is True
     assert backend_config.is_target_chat_backend() is True
     assert backend_config.is_target_exec_backend() is False
+    # Both roles unify to the canonical label, like claude_chat/qwen_chat, not
+    # the generic "copilot_chat+copilot_chat".
+    assert model.get_backend_name() == "copilot_chat"
 
 
 def test_copilot_exec_still_pairs_with_a_chat_optimizer() -> None:

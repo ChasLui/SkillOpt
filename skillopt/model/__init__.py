@@ -97,6 +97,8 @@ def get_backend_name() -> str:
         return "claude_chat"
     if optimizer == "qwen_chat" and target == "qwen_chat":
         return "qwen_chat"
+    if optimizer == "copilot_chat" and target == "copilot_chat":
+        return "copilot_chat"
     if optimizer == "openai_chat" and target == "openai_chat":
         return "azure_openai"
     if optimizer == "codex_exec" and target == "codex_exec":
