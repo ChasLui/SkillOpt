@@ -5,6 +5,7 @@ import pytest
 from skillopt_sleep.judges import (
     KNOWN_OPS,
     SHAPE_OPS,
+    char_bound,
     is_shape_only,
     score_rule_judge,
     validate_checks,
@@ -320,5 +321,43 @@ def test_mined_checks_always_pass_validate_checks() -> None:
     assert task.judge["checks"] == [{"op": "contains", "arg": "ok"}]
     errors, _ = validate_checks(task.judge)
     assert errors == []
+
+
+@pytest.mark.parametrize(
+    "bad", [1.9, float("inf"), float("nan"), float("-inf"), "5_0", "ten", None, True],
+)
+def test_miner_and_validator_agree_on_bad_char_bounds(bad) -> None:
+    # Root cause of several drifts: the miner used int(arg) while the validator
+    # applied stricter rules, so a mined bound could fail its own validation.
+    # Both now share char_bound(), so anything the miner keeps must validate.
+    task = _mk_task(
+        _digest(),
+        {
+            "intent": "gather context for a task",
+            "checks": [{"op": "max_chars", "arg": bad}, {"op": "no_refusal"}],
+            "rubric": "",
+            "satisfied": True,
+        },
+        0,
+    )
+    assert task is not None
+    # The malformed bound is dropped, never silently truncated (1.9 -> 1).
+    assert task.judge["checks"] == [{"op": "no_refusal", "arg": None}]
+    errors, _ = validate_checks(task.judge)
+    assert errors == []
+
+
+@pytest.mark.parametrize(
+    ("arg", "expected"), [(50, 50), (50.0, 50), (" 50 ", 50), ("+50", 50)],
+)
+def test_char_bound_accepts_integral_forms(arg, expected) -> None:
+    assert char_bound(arg) == expected
+
+
+@pytest.mark.parametrize("bad", [1.9, True, "5_0", "ten", None, []])
+def test_char_bound_rejects_non_integers(bad) -> None:
+    with pytest.raises((ValueError, TypeError)):
+        char_bound(bad)
+
 
 

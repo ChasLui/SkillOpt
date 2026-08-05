@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, List
 
 from skillopt_sleep import prompts as prompt_registry
 from skillopt_sleep.backend import Backend, _extract_json
+from skillopt_sleep.judges import char_bound
 from skillopt_sleep.mine import session_skill_hint
 from skillopt_sleep.types import SessionDigest, TaskRecord
 
@@ -70,12 +71,11 @@ def _mk_task(d: SessionDigest, obj: Dict[str, Any], idx: int) -> TaskRecord | No
             if isinstance(arg, str) and arg.strip():
                 clean_checks.append({"op": op, "arg": arg.strip()})
         elif op in {"max_chars", "min_chars"}:
-            # bool is a subclass of int, so int(True) would silently become 1.
-            if isinstance(arg, bool):
-                continue
+            # Shared parser with validate_checks() so the two cannot drift:
+            # rejects bools, non-integral floats and inf/nan (OverflowError).
             try:
-                bound = int(arg)
-            except (TypeError, ValueError):
+                bound = char_bound(arg)
+            except (OverflowError, TypeError, ValueError):
                 continue
             if bound < 0:
                 continue

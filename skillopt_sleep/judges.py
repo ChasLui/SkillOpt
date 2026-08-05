@@ -148,6 +148,28 @@ def is_shape_only(judge: Any) -> bool:
     return all(op in SHAPE_OPS for op in ops)
 
 
+def char_bound(arg: Any) -> int:
+    """Parse a ``max_chars``/``min_chars`` argument, or raise ``ValueError``.
+
+    Shared by :func:`validate_checks` and the LLM miner so the accepted shapes
+    cannot drift apart: a miner that emits a bound the validator later rejects
+    produces a tasks file that fails its own validation. ``bool`` is refused
+    (it is an ``int`` subclass, so ``int(True)`` would silently become 1) and a
+    non-integral float is refused rather than truncated.
+    """
+    if isinstance(arg, bool):
+        raise ValueError("bool is not a char bound")
+    if isinstance(arg, int):
+        return arg
+    if isinstance(arg, float):
+        if not arg.is_integer():
+            raise ValueError("non-integral float is not a char bound")
+        return int(arg)  # may raise OverflowError for inf/nan
+    if isinstance(arg, str) and re.fullmatch(r"[+-]?\d+", arg.strip()):
+        return int(arg.strip())
+    raise ValueError("not a char bound")
+
+
 def validate_checks(judge: Any) -> Tuple[List[str], List[str]]:
     """Return ``(errors, warnings)`` for a rule judge's checks.
 
@@ -186,20 +208,7 @@ def validate_checks(judge: Any) -> Tuple[List[str], List[str]]:
                 errors.append(f"check #{i} regex does not compile ({exc}): {arg!r}")
         elif op in {"max_chars", "min_chars"}:
             try:
-                if isinstance(arg, bool):
-                    raise ValueError
-                if isinstance(arg, int):
-                    bound = arg
-                elif isinstance(arg, float):
-                    if not arg.is_integer():
-                        raise ValueError
-                    bound = int(arg)
-                elif isinstance(arg, str) and re.fullmatch(
-                    r"[+-]?\d+", arg.strip()
-                ):
-                    bound = int(arg.strip())
-                else:
-                    raise ValueError
+                bound = char_bound(arg)
             except (OverflowError, TypeError, ValueError):
                 errors.append(f"check #{i} {op} needs an integer arg, got {arg!r}")
             else:
