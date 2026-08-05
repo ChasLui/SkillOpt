@@ -254,7 +254,7 @@ def chat_target(
     if not is_target_chat_backend():
         raise NotImplementedError(
             "chat_target is only supported with target_backend=openai_chat, claude_chat, qwen_chat, minimax_chat, "
-            "or openai_compatible. Exec backends are handled in environment-specific rollout code."
+            "copilot_chat, or openai_compatible. Exec backends are handled in environment-specific rollout code."
         )
     return _openai.chat_target(
         system=system,
@@ -427,7 +427,8 @@ def chat_target_messages(
     if not is_target_chat_backend():
         raise NotImplementedError(
             "chat_target_messages is only supported with target_backend=openai_chat, claude_chat, qwen_chat, "
-            "minimax_chat, or openai_compatible. Exec backends are handled in environment-specific rollout code."
+            "minimax_chat, copilot_chat, or openai_compatible. Exec backends are handled in environment-specific "
+            "rollout code."
         )
     return _openai.chat_target_messages(
         messages=messages,
