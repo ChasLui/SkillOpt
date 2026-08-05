@@ -32,7 +32,9 @@ CURSOR_EXEC_PATH = os.environ.get("CURSOR_EXEC_PATH", "cursor-agent")
 CURSOR_EXEC_SANDBOX = os.environ.get("CURSOR_EXEC_SANDBOX", "enabled")
 COPILOT_EXEC_PATH = os.environ.get("COPILOT_EXEC_PATH", "copilot")
 COPILOT_EXEC_HOME = os.environ.get("COPILOT_EXEC_HOME", "")
-COPILOT_EXEC_ALLOW_ALL_TOOLS = os.environ.get("COPILOT_EXEC_ALLOW_ALL_TOOLS", "0")
+COPILOT_EXEC_ALLOW_ALL_TOOLS = (
+    "1" if _parse_bool(os.environ.get("COPILOT_EXEC_ALLOW_ALL_TOOLS"), False) else "0"
+)
 COPILOT_CHAT_OPTIMIZER_MODEL = os.environ.get("COPILOT_CHAT_OPTIMIZER_MODEL", "")
 COPILOT_CHAT_TARGET_MODEL = os.environ.get("COPILOT_CHAT_TARGET_MODEL", "")
 COPILOT_CHAT_TIMEOUT = os.environ.get("COPILOT_CHAT_TIMEOUT", "600")

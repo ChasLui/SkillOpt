@@ -89,6 +89,26 @@ def test_configure_rejects_non_boolean_allow_all_tools() -> None:
         model.configure_copilot_exec(allow_all_tools="sometimes")
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("true", "1"), ("false", "0"), ("yes", "1"), ("off", "0"), ("1", "1"), ("weird", "0")],
+)
+def test_env_allow_all_tools_is_normalized_on_load(raw, expected, monkeypatch) -> None:
+    # A user may set the env var to 'true'/'false'; loading it raw used to make
+    # get_copilot_exec_config() raise. It is now normalized to '0'/'1' (unknown
+    # values fall back to the safe '0'), matching the other boolean-ish flags.
+    import importlib
+
+    monkeypatch.setenv("COPILOT_EXEC_ALLOW_ALL_TOOLS", raw)
+    importlib.reload(backend_config)
+    try:
+        assert backend_config.COPILOT_EXEC_ALLOW_ALL_TOOLS == expected
+        assert backend_config.get_copilot_exec_config()["allow_all_tools"] == expected
+    finally:
+        monkeypatch.delenv("COPILOT_EXEC_ALLOW_ALL_TOOLS", raising=False)
+        importlib.reload(backend_config)
+
+
 def test_parse_jsonl_concatenates_assistant_messages_and_ignores_noise() -> None:
     raw = "\n".join(
         [
