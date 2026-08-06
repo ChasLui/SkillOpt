@@ -161,8 +161,12 @@ _REPLAY_PROMPT_MARKERS = (
     "You are a strict grader",
     "Score the response 0.0-1.0",
     "You are SkillOpt-Sleep",
+    "You are an expert success-pattern analyst",
+    "You are an expert failure-pattern analyst",
     "## TASK\n",
     "## SKILL\n",
+    # Engine rollouts render the skill under this heading before the task.
+    "## Skill\n",
 )
 
 

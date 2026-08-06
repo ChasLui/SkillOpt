@@ -14,8 +14,9 @@ Common flags:
     --target-skill-path PATH explicit live SKILL.md to stage/adopt
     --tasks-file PATH   reviewed TaskRecord JSON file to replay instead of harvesting
     --backend mock|claude|codex|copilot|cursor|pi|handoff|azure_openai
-    --source claude|codex|copilot|cursor|pi|auto
+    --source claude|codex|copilot|copilot_cli|cursor|pi|auto
     --vscode-workspace-storage PATH
+    --copilot-cli-session-store PATH
     --model NAME
     --lookback-hours N
     --auto-adopt
@@ -83,10 +84,12 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--cursor-home", default="", help="override ~/.cursor for Cursor session harvest")
     p.add_argument("--pi-home", default="", help="override ~/.pi for Pi session harvest")
     p.add_argument("--source", default="",
-                   choices=["", "claude", "codex", "copilot", "cursor", "pi", "auto"],
+                   choices=["", "claude", "codex", "copilot", "copilot_cli", "cursor", "pi", "auto"],
                    help="session transcript source")
     p.add_argument("--vscode-workspace-storage", default="",
                    help="override VS Code User/workspaceStorage root for copilot source")
+    p.add_argument("--copilot-cli-session-store", default="",
+                   help="override ~/.copilot/session-store.db for copilot_cli source")
     p.add_argument("--lookback-hours", type=int, default=None,
                    help="harvest window in hours; 0 = scan full history")
     p.add_argument("--edit-budget", type=int, default=0)
@@ -136,6 +139,10 @@ def _cfg_from_args(args, task_meta: Dict[str, Any] | None = None) -> Any:
     if getattr(args, "vscode_workspace_storage", ""):
         overrides["vscode_workspace_storage"] = os.path.abspath(
             os.path.expanduser(args.vscode_workspace_storage)
+        )
+    if getattr(args, "copilot_cli_session_store", ""):
+        overrides["copilot_cli_session_store"] = os.path.abspath(
+            os.path.expanduser(args.copilot_cli_session_store)
         )
     lh = getattr(args, "lookback_hours", None)
     if lh is not None:  # --lookback-hours was explicitly passed (0 = full history)
