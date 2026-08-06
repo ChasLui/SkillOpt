@@ -70,6 +70,10 @@ def consolidate_groups(
     ``memory`` is the shared agent memory and is passed through read-only: group
     runs evolve skills only, so no group can rewrite another group's memory.
     """
+    # This wrapper's contract is stricter than consolidate(): shared memory is
+    # always read-only.  Override a caller-supplied value instead of passing a
+    # duplicate keyword (which would otherwise turn the group into a failure).
+    consolidate_kwargs["evolve_memory"] = False
     out: Dict[str, GroupConsolidation] = {}
     for group in groups:
         name = (group.skill_name or "").strip()
@@ -84,7 +88,7 @@ def consolidate_groups(
         try:
             result = consolidate_fn(
                 backend, list(group.tasks), group.skill, memory,
-                evolve_memory=False, **consolidate_kwargs,
+                **consolidate_kwargs,
             )
         except Exception as exc:  # one group's failure must not abort the night
             out[name] = GroupConsolidation(

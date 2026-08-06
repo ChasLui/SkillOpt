@@ -163,6 +163,21 @@ class TestConsolidateGroups(unittest.TestCase):
         self.assertEqual(seen["memory"], "# shared memory\n")
         self.assertFalse(seen["evolve_memory"])
 
+    def test_caller_cannot_override_shared_memory_isolation(self):
+        seen = {}
+
+        def _fake(backend, tasks, skill, memory, **kwargs):
+            seen.update(kwargs)
+            return consolidate(backend, tasks, skill, memory, **kwargs)
+
+        outcomes = consolidate_groups(
+            MockBackend(),
+            [SkillGroup("research-skill", set_learned("", []), _tasks(researcher_persona))],
+            consolidate_fn=_fake, edit_budget=4, night=1, evolve_memory=True,
+        )
+        self.assertEqual(outcomes["research-skill"].status, CONSOLIDATED)
+        self.assertFalse(seen["evolve_memory"])
+
     def test_accepted_group_skills_lists_only_accepted_updates(self):
         outcomes = {
             "kept": GroupConsolidation(
