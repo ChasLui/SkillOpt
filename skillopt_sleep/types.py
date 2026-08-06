@@ -143,6 +143,9 @@ class SleepReport:
     candidate_score: float = 0.0
     accepted: bool = False
     gate_action: str = ""
+    # True when the gate's validation slice was not disjoint from the tasks the
+    # optimizer saw, so its comparison could not detect overfitting.
+    holdout_leaked: bool = False
     no_edits_reason: str = ""
     edits: List[EditRecord] = field(default_factory=list)
     rejected_edits: List[EditRecord] = field(default_factory=list)
