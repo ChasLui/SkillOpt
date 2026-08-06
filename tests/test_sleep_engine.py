@@ -942,8 +942,30 @@ class TestLlmMiner(unittest.TestCase):
         miner = make_llm_miner(StubBackend())
         tasks = miner([digest])
         self.assertEqual(len(tasks), 1)
+        # A shape-only judge plus a rubric now grades on outcome, not on the
+        # presence of a heading an optimizer can simply add.
+        self.assertEqual(tasks[0].reference_kind, "rubric")
+        self.assertEqual(tasks[0].reference, "has a risks section")
+
+    def test_miner_keeps_rule_judge_when_no_rubric_offered(self):
+        from skillopt_sleep.backend import Backend
+        from skillopt_sleep.llm_miner import make_llm_miner
+
+        class StubBackend(Backend):
+            name = "stub"
+
+            def _call(self, prompt, *, max_tokens=1024):
+                return ('[{"intent":"write a research brief",'
+                        '"checks":[{"op":"contains","arg":"risk"}],'
+                        '"rubric":"","satisfied":false}]')
+
+        digest = SessionDigest(session_id="s1", project="/p",
+                               user_prompts=["write a brief on X"],
+                               assistant_finals=["a brief"], n_user_turns=1)
+        tasks = make_llm_miner(StubBackend())([digest])
+        self.assertEqual(len(tasks), 1)
         self.assertEqual(tasks[0].reference_kind, "rule")
-        self.assertEqual(tasks[0].judge["checks"][0]["op"], "section_present")
+        self.assertEqual(tasks[0].judge["checks"][0]["op"], "contains")
 
     def test_miner_drops_uncheckable(self):
         from skillopt_sleep.backend import Backend
