@@ -154,6 +154,39 @@ class TestSleepReportCompatibility(unittest.TestCase):
         self.assertEqual(payload["skill_groups"][0]["skill_name"], "research-skill")
         self.assertEqual(payload["skill_groups"][0]["n_applied_edits"], 2)
 
+    def test_rows_track_outcomes_not_input_groups(self):
+        # outcomes is keyed by skill name, so groups that collapsed onto a
+        # shared key upstream are already a single entry and cannot each get a
+        # row. Pinned because "one row per group" is the intuitive reading and
+        # it is wrong.
+        groups = [
+            SkillGroup("research-skill", set_learned("", []), _tasks()),
+            SkillGroup("research-skill", set_learned("", []), _tasks()),
+            SkillGroup("", set_learned("", []), _tasks()),
+            SkillGroup("   ", set_learned("", []), _tasks()),
+        ]
+        outcomes = consolidate_groups(MockBackend(), groups, edit_budget=4, night=1)
+        rows = skill_group_reports(outcomes)
+        self.assertEqual(len(outcomes), 2)
+        self.assertEqual(len(rows), len(outcomes))
+        self.assertLess(len(rows), len(groups))
+        self.assertEqual([r.skill_name for r in rows], ["research-skill", ""])
+
+    def test_a_blank_named_group_still_reports_its_task_count(self):
+        # The row is that group's own evidence. Reporting 0 tasks for a group
+        # that had several misstates why it was dropped.
+        tasks = _tasks()
+        self.assertTrue(tasks, "fixture must supply tasks for this to mean anything")
+        outcomes = consolidate_groups(
+            MockBackend(),
+            [SkillGroup("  ", set_learned("", []), tasks)],
+            edit_budget=4, night=1,
+        )
+        row = skill_group_reports(outcomes)[0]
+        self.assertEqual(row.status, SKIPPED)
+        self.assertEqual(row.n_tasks, len(tasks))
+        self.assertIn("no skill name", row.reason)
+
 
 if __name__ == "__main__":
     unittest.main()

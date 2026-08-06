@@ -79,7 +79,13 @@ def consolidate_groups(
     for group in groups:
         name = (group.skill_name or "").strip()
         if not name:
-            out.setdefault("", GroupConsolidation("", SKIPPED, reason="group has no skill name"))
+            # Carry the task count even though the group is unusable: the row
+            # is meant to be that group's own evidence, and reporting 0 tasks
+            # for a group that had several misstates why it was dropped.
+            out.setdefault("", GroupConsolidation(
+                "", SKIPPED, reason="group has no skill name",
+                n_tasks=len(group.tasks),
+            ))
             continue
         if name in out:
             continue  # first group wins; a repeated name is not a second night
@@ -108,7 +114,11 @@ def consolidate_groups(
 def skill_group_reports(
     outcomes: Dict[str, GroupConsolidation],
 ) -> List[SkillGroupReport]:
-    """Build one report row per group, from that group's evidence only.
+    """Build one report row per entry in ``outcomes``, from its evidence only.
+
+    One row per *outcome*, which is at most one per input group: ``outcomes`` is
+    keyed by skill name, so groups that collapsed onto a shared key upstream
+    have already become a single entry and cannot produce a row each.
 
     A skipped or failed group reports its reason and keeps zeroed scores rather
     than inheriting another group's numbers, and an accepted group's row is
