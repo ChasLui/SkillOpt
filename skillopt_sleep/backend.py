@@ -958,7 +958,8 @@ class CodexCliBackend(CliBackend):
             cmd[3:3] = ["-C", self.project_dir]
         if self.model:
             cmd += ["-m", self.model]
-        cmd += ["--", prompt]
+        # Prompt via stdin (`codex exec -`): the Windows .CMD shim truncates argv at the first CR/LF.
+        cmd += ["-"]
         proc = None
         try:
             try:
@@ -967,8 +968,11 @@ class CodexCliBackend(CliBackend):
                     capture_output=True,
                     creationflags=_NO_WINDOW,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=self.timeout,
                     cwd=self.project_dir or None,
+                    input=prompt,
                 )
             except subprocess.TimeoutExpired:
                 self.last_call_error = f"codex exec timed out after {self.timeout}s"
@@ -1101,11 +1105,22 @@ class CodexCliBackend(CliBackend):
             ]
             if self.model:
                 cmd += ["-m", self.model]
-            cmd += ["--", prompt]
+            # Prompt via stdin (`codex exec -`): the Windows .CMD shim truncates argv at the first CR/LF.
+            cmd += ["-"]
             self.last_call_error = ""
             proc = None
             try:
-                proc = subprocess.run(cmd, capture_output=True, creationflags=_NO_WINDOW, text=True, timeout=self.timeout, cwd=work)
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    creationflags=_NO_WINDOW,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=self.timeout,
+                    cwd=work,
+                    input=prompt,
+                )
             except subprocess.TimeoutExpired:
                 self.last_call_error = f"codex exec (tools) timed out after {self.timeout}s"
             except Exception as exc:  # noqa: BLE001
