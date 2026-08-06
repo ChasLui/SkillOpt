@@ -24,6 +24,12 @@ _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+# Progress output uses box-drawing and arrow characters that crash a cp1252
+# console/redirection mid-run; force UTF-8 before any of it is written.
+from skillopt.utils.console import force_utf8_stdout_stderr
+
+force_utf8_stdout_stderr()
+
 from skillopt.model import (
     configure_azure_openai,
     configure_claude_code_exec,
