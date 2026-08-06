@@ -58,6 +58,23 @@ def test_no_refusal_passes_on_substantive_answer() -> None:
     assert score_rule_judge(judge, "Here is the context you asked for: ...")[0] == 1.0
 
 
+def test_no_refusal_ignores_markdown_prefix_length() -> None:
+    judge = {"kind": "rule", "checks": [{"op": "no_refusal"}]}
+    response = "> " * 350 + "I cannot help with that."
+    assert len(response) >= 600
+    assert score_rule_judge(judge, response)[0] == 0.0
+
+
+def test_no_refusal_length_is_measured_before_unicode_lowercasing() -> None:
+    judge = {"kind": "rule", "checks": [{"op": "no_refusal"}]}
+    # U+0130 lowercases to two code points. Case normalization must not turn a
+    # short refusal into an apparently substantive response over 600 chars.
+    response = "I cannot help. " + "İ" * 300
+    assert len(response) < 600
+    assert len(response.lower()) >= 600
+    assert score_rule_judge(judge, response)[0] == 0.0
+
+
 def test_no_refusal_accepts_a_refusal_that_still_does_the_work() -> None:
     # An abstention that explains what was searched and what is missing is a
     # useful answer, not a dead end.
@@ -382,6 +399,4 @@ def test_char_bound_accepts_integral_forms(arg, expected) -> None:
 def test_char_bound_rejects_non_integers(bad) -> None:
     with pytest.raises((ValueError, TypeError)):
         char_bound(bad)
-
-
 
