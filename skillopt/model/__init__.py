@@ -65,8 +65,8 @@ def set_backend(name: str | None) -> str:
         set_target_backend("cursor_exec")
         return "cursor_exec"
     if normalized in {"copilot", "copilot_cli", "github_copilot", "copilot_chat"}:
-        # Fully local: the Copilot CLI drives BOTH the optimizer and the target,
-        # so a run needs no cloud API key.
+        # The CLI-authenticated backend drives both roles without a separate
+        # provider API key; inference still uses the Copilot cloud service.
         set_optimizer_backend("copilot_chat")
         set_target_backend("copilot_chat")
         return "copilot_chat"

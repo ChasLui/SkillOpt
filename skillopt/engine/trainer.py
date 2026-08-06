@@ -76,6 +76,7 @@ from skillopt.model import (
     set_optimizer_backend,
     set_optimizer_deployment,
 )
+from skillopt.model.common import normalize_backend_name
 from skillopt.utils import compute_score, skill_hash
 
 
@@ -462,6 +463,7 @@ def _resolve_role_backends(
     left at its default value counts as unset; a role the operator pointed at
     something else always wins.
     """
+    backend = normalize_backend_name(backend)
     if backend in {"claude", "claude_chat"}:
         # A chat backend fills BOTH roles, so -- like copilot -- a role pinned
         # to a default (including the base config's truthy openai_chat) must be
@@ -497,6 +499,15 @@ def _resolve_role_backends(
         optimizer_backend = optimizer_backend or "openai_chat"
         if target_backend in _ROLE_BACKEND_DEFAULTS:
             target_backend = "qwen_chat"
+    elif backend == "minimax_chat":
+        optimizer_backend = optimizer_backend or "openai_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "minimax_chat"
+    elif backend == "openai_compatible":
+        if optimizer_backend in _ROLE_BACKEND_DEFAULTS:
+            optimizer_backend = "openai_compatible"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "openai_compatible"
     else:
         optimizer_backend = optimizer_backend or "openai_chat"
         target_backend = target_backend or "openai_chat"

@@ -30,6 +30,23 @@ def test_backend_flag_wins_over_base_config_defaults(backend, expected) -> None:
     assert _resolve_role_backends(backend, *_BASE_CONFIG) == expected
 
 
+@pytest.mark.parametrize(
+    ("alias", "expected"),
+    [
+        ("anthropic", ("claude_chat", "claude_chat")),
+        ("openai", ("codex_exec", "codex_exec")),
+        ("cursor_agent", ("openai_chat", "cursor_exec")),
+        ("copilot_cli", ("copilot_chat", "copilot_chat")),
+        ("github_copilot", ("copilot_chat", "copilot_chat")),
+        ("minimax", ("openai_chat", "minimax_chat")),
+        ("compat", ("openai_compatible", "openai_compatible")),
+        ("openai-compatible", ("openai_compatible", "openai_compatible")),
+    ],
+)
+def test_backend_aliases_are_normalized_before_role_resolution(alias, expected) -> None:
+    assert _resolve_role_backends(alias, *_BASE_CONFIG) == expected
+
+
 def test_azure_openai_stays_on_openai_chat() -> None:
     assert _resolve_role_backends("azure_openai", *_BASE_CONFIG) == _BASE_CONFIG
 

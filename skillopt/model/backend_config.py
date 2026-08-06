@@ -296,7 +296,7 @@ def configure_copilot_chat(
     """Configure the Copilot CLI *chat* backend (optimizer and/or target).
 
     Unlike `copilot_exec`, this runs the CLI as a plain chat model so a whole
-    run can execute with no cloud API key.
+    run can use CLI authentication without a separate provider API key.
     """
     global COPILOT_EXEC_PATH, COPILOT_EXEC_HOME
     global COPILOT_CHAT_OPTIMIZER_MODEL, COPILOT_CHAT_TARGET_MODEL, COPILOT_CHAT_TIMEOUT
