@@ -34,7 +34,7 @@ model:
   copilot_exec_allow_all_tools: null  # required for file-edit rollouts
   copilot_chat_optimizer_model: ""   # blank lets the CLI pick its default model
   copilot_chat_target_model: ""
-  copilot_chat_timeout: 0            # 0 uses COPILOT_CHAT_TIMEOUT or the built-in default
+  copilot_chat_timeout: null         # preserves COPILOT_CHAT_TIMEOUT or the built-in default
   codex_trace_to_optimizer: true
   azure_openai_endpoint: ""           # e.g. "https://your-resource.openai.azure.com/"
   azure_openai_api_version: "2024-12-01-preview"

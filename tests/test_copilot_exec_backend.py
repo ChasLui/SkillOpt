@@ -193,7 +193,7 @@ def test_copilot_chat_calls_reach_the_aggregate_token_summary(monkeypatch) -> No
     assert model.get_token_summary()["_total"]["calls"] == 0
 
 
-def test_config_default_does_not_clobber_the_env_opt_in() -> None:
+def test_config_defaults_do_not_clobber_copilot_env_settings() -> None:
     # The shipped base config must not pin this to false: trainer.py and
     # eval_only.py pass cfg.get("copilot_exec_allow_all_tools") straight into
     # configure_copilot_exec(), and a non-None value overwrites the env var --
@@ -205,11 +205,15 @@ def test_config_default_does_not_clobber_the_env_opt_in() -> None:
     with open(root / "configs" / "_base_" / "default.yaml", encoding="utf-8") as fh:
         base = yaml.safe_load(fh)
     assert base["model"]["copilot_exec_allow_all_tools"] is None
+    assert base["model"]["copilot_chat_timeout"] is None
 
-    # None must be a no-op, so a prior opt-in survives.
+    # None must be a no-op, so prior environment-derived settings survive.
     model.configure_copilot_exec(allow_all_tools=True)
     model.configure_copilot_exec(allow_all_tools=None)
     assert backend_config.COPILOT_EXEC_ALLOW_ALL_TOOLS == "1"
+    model.configure_copilot_chat(timeout=123)
+    model.configure_copilot_chat(timeout=None)
+    assert backend_config.COPILOT_CHAT_TIMEOUT == "123"
 
 
 def test_copilot_backends_keep_a_real_deployment_fallback() -> None:
