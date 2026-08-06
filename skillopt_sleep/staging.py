@@ -14,7 +14,7 @@ import shutil
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from skillopt_sleep.types import SleepReport
 
@@ -323,7 +323,7 @@ def _write_atomic(path: str, text: str) -> None:
         raise
 
 
-def skill_proposal_rows(proposals: Sequence[SkillProposal]) -> List[Dict[str, Any]]:
+def skill_proposal_rows(proposals: Iterable[SkillProposal]) -> List[Dict[str, Any]]:
     """Validate proposals and return their manifest rows, in input order.
 
     Raises :class:`StagingError` on an unusable skill name, an unsafe live target
@@ -383,17 +383,17 @@ def skill_proposal_rows(proposals: Sequence[SkillProposal]) -> List[Dict[str, An
 
 
 def write_skill_proposals(
-    out_dir: str, proposals: Sequence[SkillProposal]
+    out_dir: str, proposals: Iterable[SkillProposal]
 ) -> List[Dict[str, Any]]:
     """Stage one uniquely named proposal file per skill; return manifest rows.
 
     Every proposal is validated before anything is written, so a rejected
     fan-out leaves no partial files behind.
     """
-    # Materialise once. The annotation says Sequence but nothing enforces it,
-    # and a generator would be drained by the validation pass — leaving the
-    # write loop with nothing to iterate and returning a full set of manifest
-    # rows for files that were never created.
+    # Materialise once. The signature accepts any Iterable, so a generator is
+    # legal input — and it would otherwise be drained by the validation pass,
+    # leaving the write loop with nothing to iterate and returning a full set
+    # of manifest rows for files that were never created.
     proposals = list(proposals)
     rows = skill_proposal_rows(proposals)
     if not rows:
@@ -449,7 +449,7 @@ def write_staging(
     live_memory_path: str,
     report_md: str,
     out_dir: str = "",
-    skill_proposals: Sequence[SkillProposal] = (),
+    skill_proposals: Iterable[SkillProposal] = (),
 ) -> str:
     """Write proposals + report into staging/<ts>/ and return that path.
 
