@@ -63,6 +63,8 @@ from skillopt.model import (
     configure_azure_openai,
     configure_claude_code_exec,
     configure_codex_exec,
+    configure_copilot_chat,
+    configure_copilot_exec,
     configure_cursor_exec,
     configure_minimax_chat,
     configure_qwen_chat,
@@ -74,6 +76,7 @@ from skillopt.model import (
     set_optimizer_backend,
     set_optimizer_deployment,
 )
+from skillopt.model.common import normalize_backend_name
 from skillopt.utils import compute_score, skill_hash
 
 
@@ -445,6 +448,72 @@ def _resolve_train_size(cfg: dict, dataloader) -> int:
     return int(train_size)
 
 
+# Role backends the shipped base config sets, which must not defeat --backend.
+_ROLE_BACKEND_DEFAULTS = (None, "", "openai_chat")
+
+
+def _resolve_role_backends(
+    backend: str, optimizer_backend: str | None, target_backend: str | None
+) -> tuple[str, str]:
+    """Map a high-level ``--backend`` label onto (optimizer, target) backends.
+
+    ``configs/_base_/default.yaml`` pins both roles to ``openai_chat``, so a
+    resolution guarded only by "is either role unset?" never fired for runs
+    using the shipped defaults and ``--backend`` was silently ignored. A role
+    left at its default value counts as unset; a role the operator pointed at
+    something else always wins.
+    """
+    backend = normalize_backend_name(backend)
+    if backend == "claude_chat":
+        # A chat backend fills BOTH roles, so -- like copilot -- a role pinned
+        # to a default (including the base config's truthy openai_chat) must be
+        # overridden. `x = x or ...` would leave openai_chat in place.
+        if optimizer_backend in _ROLE_BACKEND_DEFAULTS:
+            optimizer_backend = "claude_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "claude_chat"
+    elif backend in {"codex", "codex_exec"}:
+        if optimizer_backend in _ROLE_BACKEND_DEFAULTS:
+            optimizer_backend = "codex_exec"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "codex_exec"
+    elif backend == "claude_code_exec":
+        optimizer_backend = optimizer_backend or "openai_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "claude_code_exec"
+    elif backend == "cursor_exec":
+        optimizer_backend = optimizer_backend or "openai_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "cursor_exec"
+    elif backend == "copilot_chat":
+        # Both roles use the locally installed, CLI-authenticated backend.
+        if optimizer_backend in _ROLE_BACKEND_DEFAULTS:
+            optimizer_backend = "copilot_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "copilot_chat"
+    elif backend == "copilot_exec":
+        optimizer_backend = optimizer_backend or "openai_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "copilot_exec"
+    elif backend == "qwen_chat":
+        optimizer_backend = optimizer_backend or "openai_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "qwen_chat"
+    elif backend == "minimax_chat":
+        optimizer_backend = optimizer_backend or "openai_chat"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "minimax_chat"
+    elif backend == "openai_compatible":
+        if optimizer_backend in _ROLE_BACKEND_DEFAULTS:
+            optimizer_backend = "openai_compatible"
+        if target_backend in _ROLE_BACKEND_DEFAULTS:
+            target_backend = "openai_compatible"
+    else:
+        optimizer_backend = optimizer_backend or "openai_chat"
+        target_backend = target_backend or "openai_chat"
+    return optimizer_backend, target_backend
+
+
 def _compute_task_type_buckets(results: list[dict], task_types: list[str]) -> dict[str, dict]:
     """Compute per-task-type success rates."""
     buckets: dict[str, dict] = {}
@@ -668,31 +737,11 @@ class ReflACTTrainer:
                 cfg.get("target_azure_openai_managed_identity_client_id") or None
             ),
         )
-        optimizer_backend = cfg.get("optimizer_backend")
-        target_backend = cfg.get("target_backend")
-        if not optimizer_backend or not target_backend:
-            if backend in {"claude", "claude_chat"}:
-                optimizer_backend = optimizer_backend or "claude_chat"
-                target_backend = target_backend or "claude_chat"
-            elif backend in {"codex", "codex_exec"}:
-                if optimizer_backend in (None, "", "openai_chat"):
-                    optimizer_backend = "codex_exec"
-                if target_backend in (None, "", "openai_chat"):
-                    target_backend = "codex_exec"
-            elif backend == "claude_code_exec":
-                optimizer_backend = optimizer_backend or "openai_chat"
-                target_backend = target_backend or "claude_code_exec"
-            elif backend in {"cursor", "cursor_exec"}:
-                optimizer_backend = optimizer_backend or "openai_chat"
-                target_backend = target_backend or "cursor_exec"
-            elif backend in {"qwen", "qwen_chat"}:
-                optimizer_backend = optimizer_backend or "openai_chat"
-                target_backend = target_backend or "qwen_chat"
-            else:
-                optimizer_backend = optimizer_backend or "openai_chat"
-                target_backend = target_backend or "openai_chat"
-            cfg["optimizer_backend"] = optimizer_backend
-            cfg["target_backend"] = target_backend
+        optimizer_backend, target_backend = _resolve_role_backends(
+            backend, cfg.get("optimizer_backend"), cfg.get("target_backend")
+        )
+        cfg["optimizer_backend"] = optimizer_backend
+        cfg["target_backend"] = target_backend
         set_optimizer_backend(optimizer_backend)
         set_target_backend(target_backend)
         set_optimizer_deployment(cfg["optimizer_model"])
@@ -718,6 +767,16 @@ class ReflACTTrainer:
         configure_cursor_exec(
             path=cfg.get("cursor_exec_path") or None,
             sandbox=cfg.get("cursor_exec_sandbox") or None,
+        )
+        configure_copilot_exec(
+            path=cfg.get("copilot_exec_path") or None,
+            home=cfg.get("copilot_exec_home") or None,
+            allow_all_tools=cfg.get("copilot_exec_allow_all_tools"),
+        )
+        configure_copilot_chat(
+            optimizer_model=cfg.get("copilot_chat_optimizer_model") or None,
+            target_model=cfg.get("copilot_chat_target_model") or None,
+            timeout=cfg.get("copilot_chat_timeout") or None,
         )
         configure_qwen_chat(
             base_url=cfg.get("qwen_chat_base_url") or None,

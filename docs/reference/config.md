@@ -16,9 +16,11 @@ selecting the generic OpenAI-compatible backend.
 | `claude_chat` | ✓ | ✓ |
 | `qwen_chat` | ✓ | ✓ |
 | `minimax_chat` | ✓ | ✓ |
+| `copilot_chat` | ✓ | ✓ |
 | `codex_exec` | ✓ | ✓ |
 | `claude_code_exec` | — | ✓ |
 | `cursor_exec` | — | ✓ |
+| `copilot_exec` | — | ✓ |
 
 MiniMax currently has one shared deployment. `model.minimax_model` is applied
 when MiniMax is the target; mixed-backend runs cannot independently choose a
@@ -67,6 +69,11 @@ defaults to `claude` and can be overridden with `CLAUDE_CLI_BIN`.
 | `model.claude_code_exec_*` | Claude path, profile, SDK mode, effort, and thinking-token cap |
 | `model.cursor_exec_path` | Cursor Agent executable path; default `cursor-agent` |
 | `model.cursor_exec_sandbox` | Cursor sandbox mode: `enabled` (default) or `disabled`; file-edit rollouts require `enabled` |
+| `model.copilot_exec_path` | GitHub Copilot CLI executable path; default `copilot` |
+| `model.copilot_exec_home` | Optional `COPILOT_HOME` override isolating CLI config |
+| `model.copilot_exec_allow_all_tools` | Optional opt-in to `--allow-all-tools`; unset by default so `COPILOT_EXEC_ALLOW_ALL_TOOLS` remains authoritative |
+| `model.copilot_chat_optimizer_model` / `model.copilot_chat_target_model` | Optional per-role `--model` IDs for `copilot_chat` |
+| `model.copilot_chat_timeout` | Per-call timeout in seconds for `copilot_chat` |
 
 ## Training (`train`)
 
