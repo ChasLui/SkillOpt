@@ -308,11 +308,21 @@ def skill_proposal_rows(proposals: Sequence[SkillProposal]) -> List[Dict[str, An
     """Validate proposals and return their manifest rows, in input order.
 
     Raises :class:`StagingError` on an unusable skill name, an unsafe live target
-    path, or a collision on either the skill name or the live path: a night must
-    never stage two skills into one file or point a proposal at the wrong one.
+    path, or a collision on the skill name, the staged filename, or the live
+    path: a night must never stage two skills into one file or point a proposal
+    at the wrong one.
+
+    Staged filenames are compared case-insensitively. Skill names are
+    case-sensitive, so ``Research`` and ``research`` are two different skills on
+    a case-sensitive filesystem — but their proposal files land in one staging
+    directory, and on macOS and Windows that directory is case-insensitive, so
+    the second write silently replaces the first and the manifest then points a
+    surviving filename at another skill's content. Refusing the pair is the
+    conservative reading of the promise above.
     """
     rows: List[Dict[str, Any]] = []
     seen_paths: Dict[str, str] = {}
+    seen_files: Dict[str, str] = {}
     for proposal in proposals:
         name = _safe_skill_name(proposal.skill_name)
         if not name:
@@ -324,14 +334,22 @@ def skill_proposal_rows(proposals: Sequence[SkillProposal]) -> List[Dict[str, An
             )
         if any(row["skill_name"] == name for row in rows):
             raise StagingError(f"duplicate skill name in staging fan-out: {name!r}")
+        proposed_file = proposal_filename(name)
+        file_key = proposed_file.lower()
+        if file_key in seen_files:
+            raise StagingError(
+                f"skills {seen_files[file_key]!r} and {name!r} stage to the same "
+                f"file on a case-insensitive filesystem: {proposed_file}"
+            )
         if live in seen_paths:
             raise StagingError(
                 f"skills {seen_paths[live]!r} and {name!r} target the same file: {live}"
             )
         seen_paths[live] = name
+        seen_files[file_key] = name
         rows.append({
             "skill_name": name,
-            "proposed_file": proposal_filename(name),
+            "proposed_file": proposed_file,
             "live_skill_path": live,
         })
     return rows

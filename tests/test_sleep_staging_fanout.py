@@ -48,6 +48,32 @@ class TestSkillProposalRows(unittest.TestCase):
             skill_proposal_rows([_proposal("alpha"),
                                  _proposal("alpha", live="/tmp/other/SKILL.md")])
 
+    def test_names_differing_only_by_case_are_refused(self):
+        # Skill names are case-sensitive, but every proposal lands in one
+        # staging directory — and on macOS and Windows that directory is
+        # case-insensitive. Before this guard, staging "Research" then
+        # "research" produced two manifest rows but one file on disk, named
+        # after the first skill and containing the second one's document.
+        with self.assertRaises(StagingError):
+            skill_proposal_rows([_proposal("Research"),
+                                 _proposal("research", live="/tmp/other/SKILL.md")])
+
+    def test_case_differing_proposals_never_lose_a_staged_file(self):
+        # Guards the guard: if the refusal above is ever relaxed, this asserts
+        # the actual filesystem outcome rather than the intent.
+        with tempfile.TemporaryDirectory() as out:
+            try:
+                rows = write_skill_proposals(
+                    out,
+                    [_proposal("Research"),
+                     _proposal("research", live="/tmp/other/SKILL.md")],
+                )
+            except StagingError:
+                return  # refused up front, which is the desired behaviour
+            staged = [f for f in os.listdir(out) if f.startswith("proposed_")]
+            self.assertEqual(len(staged), len(rows),
+                             "a manifest row exists whose staged file was overwritten")
+
     def test_two_skills_targeting_one_file_are_refused(self):
         shared = "/tmp/live/shared/SKILL.md"
         with self.assertRaises(StagingError):
