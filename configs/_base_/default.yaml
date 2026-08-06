@@ -27,7 +27,7 @@ model:
   cursor_exec_path: ""       # blank uses CURSOR_EXEC_PATH or cursor-agent
   cursor_exec_sandbox: ""    # blank uses CURSOR_EXEC_SANDBOX or enabled
   # GitHub Copilot CLI. `--backend copilot` selects copilot_chat for BOTH roles,
-  # which is the only fully local (no cloud API key) configuration.
+  # using CLI authentication rather than a separate provider API key.
   copilot_exec_path: ""              # blank uses COPILOT_EXEC_PATH or copilot
   copilot_exec_home: ""              # blank leaves COPILOT_HOME untouched
   copilot_exec_allow_all_tools: null   # blank uses COPILOT_EXEC_ALLOW_ALL_TOOLS (default off);

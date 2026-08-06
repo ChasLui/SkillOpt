@@ -144,6 +144,7 @@ def _fake_run(captured: dict, stdout: str, returncode: int = 0):
 def test_run_copilot_exec_builds_isolated_readonly_command(monkeypatch, tmp_path) -> None:
     model.set_backend("copilot")
     model.configure_copilot_exec(path="copilot", home=str(tmp_path / "home"), allow_all_tools=False)
+    monkeypatch.setenv("COPILOT_ALLOW_ALL", "true")
     captured: dict = {}
     stdout = json.dumps({"type": "assistant.message", "data": {"content": "answer"}})
     monkeypatch.setattr(harness.subprocess, "run", _fake_run(captured, stdout))
@@ -162,6 +163,7 @@ def test_run_copilot_exec_builds_isolated_readonly_command(monkeypatch, tmp_path
     assert "--no-custom-instructions" in cmd
     # Read-only rollout must NOT bypass the CLI approval gate.
     assert "--allow-all-tools" not in cmd
+    assert "COPILOT_ALLOW_ALL" not in captured["env"]
     assert captured["env"]["COPILOT_HOME"] == str(tmp_path / "home")
 
 
@@ -277,13 +279,13 @@ def test_run_target_exec_dispatches_to_copilot(monkeypatch, tmp_path) -> None:
     assert called["model"] == "m"
 
 
-# --- copilot_chat: the fully-local path (no cloud API key) -------------------
+# --- copilot_chat: CLI-authenticated path (no separate provider API key) -----
 
 
-def test_copilot_alias_selects_fully_local_chat_backend() -> None:
+def test_copilot_alias_selects_cli_authenticated_chat_backend() -> None:
     assert normalize_backend_name("copilot") == "copilot_chat"
     assert model.set_backend("copilot") == "copilot_chat"
-    # Both halves run on the local CLI -- this is what makes a run key-free.
+    # Both halves run through the CLI, so no separate provider API key is used.
     assert backend_config.get_optimizer_backend() == "copilot_chat"
     assert backend_config.get_target_backend() == "copilot_chat"
     assert backend_config.is_optimizer_chat_backend() is True
@@ -295,7 +297,7 @@ def test_copilot_alias_selects_fully_local_chat_backend() -> None:
 
 
 def test_copilot_exec_still_pairs_with_a_chat_optimizer() -> None:
-    # Guards the split: `copilot` is fully local, `copilot_exec` is not.
+    # Guards the split: `copilot` fills both roles, `copilot_exec` does not.
     assert model.set_backend("copilot_exec") == "copilot_exec"
     assert backend_config.get_optimizer_backend() == "openai_chat"
     assert backend_config.get_target_backend() == "copilot_exec"
@@ -304,6 +306,7 @@ def test_copilot_exec_still_pairs_with_a_chat_optimizer() -> None:
 def test_chat_backend_composes_system_and_user_into_one_prompt(monkeypatch) -> None:
     model.set_backend("copilot")
     captured: dict = {}
+    monkeypatch.setenv("COPILOT_ALLOW_ALL", "true")
     stdout = json.dumps({"type": "assistant.message", "data": {"content": "done"}})
     monkeypatch.setattr(copilot_backend.subprocess, "run", _fake_run(captured, stdout))
 
@@ -315,8 +318,10 @@ def test_chat_backend_composes_system_and_user_into_one_prompt(monkeypatch) -> N
     prompt = cmd[cmd.index("-p") + 1]
     assert "SYS" in prompt and "USR" in prompt
     assert "--disable-builtin-mcps" in cmd and "--no-custom-instructions" in cmd
+    assert "--available-tools=" in cmd
     # A chat call must never be granted unattended tool use.
     assert "--allow-all-tools" not in cmd
+    assert "COPILOT_ALLOW_ALL" not in captured["env"]
 
 
 def test_chat_backend_routes_optimizer_and_target_models(monkeypatch) -> None:
@@ -374,6 +379,59 @@ def test_messages_variant_flattens_roles(monkeypatch) -> None:
     assert text == "ok"
     prompt = captured["cmd"][captured["cmd"].index("-p") + 1]
     assert "SYSTEM_TEXT" in prompt and "USER_TEXT" in prompt
+
+
+@pytest.mark.parametrize("role", ["optimizer", "target"])
+def test_messages_variant_returns_compat_message_when_requested(monkeypatch, role) -> None:
+    from skillopt.model.common import CompatAssistantMessage
+
+    model.set_backend("copilot")
+    monkeypatch.setattr(copilot_backend, "_invoke", lambda *a, **k: "ok")
+
+    chat_messages = getattr(model, f"chat_{role}_messages")
+    message, usage = chat_messages(
+        messages=[{"role": "user", "content": "hello"}],
+        return_message=True,
+        retries=1,
+    )
+
+    assert isinstance(message, CompatAssistantMessage)
+    assert message.content == "ok"
+    assert message.tool_calls == []
+    assert usage == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+
+@pytest.mark.parametrize(
+    ("role", "kwargs"),
+    [
+        (
+            "optimizer",
+            {"tools": [{"type": "function", "function": {"name": "search"}}]},
+        ),
+        ("target", {"tool_choice": "auto"}),
+    ],
+)
+def test_messages_variant_fails_fast_for_unsupported_tools(
+    monkeypatch, role, kwargs
+) -> None:
+    model.set_backend("copilot")
+    invoked = False
+
+    def _unexpected_invoke(*args, **call_kwargs):
+        nonlocal invoked
+        invoked = True
+        return "unexpected"
+
+    monkeypatch.setattr(copilot_backend, "_invoke", _unexpected_invoke)
+
+    chat_messages = getattr(model, f"chat_{role}_messages")
+    with pytest.raises(NotImplementedError, match="does not support caller-supplied tools"):
+        chat_messages(
+            messages=[{"role": "user", "content": "hello"}],
+            retries=1,
+            **kwargs,
+        )
+    assert invoked is False
 
 
 def test_copilot_config_keys_survive_flattening() -> None:

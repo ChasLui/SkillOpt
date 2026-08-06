@@ -28,6 +28,8 @@ from skillopt.model import (
     configure_azure_openai,
     configure_claude_code_exec,
     configure_codex_exec,
+    configure_copilot_chat,
+    configure_copilot_exec,
     configure_cursor_exec,
     configure_qwen_chat,
     configure_minimax_chat,
@@ -356,7 +358,7 @@ def main() -> None:
             _set_role("optimizer_backend", "openai_chat")
             _set_role("target_backend", "cursor_exec")
         elif backend in {"copilot", "copilot_chat"}:
-            # Both roles on the local CLI: the only fully local configuration.
+            # Both roles use the locally installed, CLI-authenticated backend.
             _set_role("optimizer_backend", "copilot_chat")
             _set_role("target_backend", "copilot_chat")
         elif backend == "copilot_exec":

@@ -47,6 +47,48 @@ def test_explicit_non_default_roles_are_preserved() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("backend", "expected_target"),
+    [
+        ("claude", "claude_chat"),
+        ("codex", "codex_exec"),
+        ("claude_code_exec", "claude_code_exec"),
+        ("cursor", "cursor_exec"),
+        ("copilot", "copilot_chat"),
+        ("copilot_exec", "copilot_exec"),
+        ("qwen", "qwen_chat"),
+    ],
+)
+def test_explicit_optimizer_is_preserved_while_default_target_is_resolved(
+    backend, expected_target
+) -> None:
+    assert _resolve_role_backends(backend, "minimax_chat", "openai_chat") == (
+        "minimax_chat",
+        expected_target,
+    )
+
+
+@pytest.mark.parametrize(
+    ("backend", "expected_optimizer"),
+    [
+        ("claude", "claude_chat"),
+        ("codex", "codex_exec"),
+        ("claude_code_exec", "openai_chat"),
+        ("cursor", "openai_chat"),
+        ("copilot", "copilot_chat"),
+        ("copilot_exec", "openai_chat"),
+        ("qwen", "openai_chat"),
+    ],
+)
+def test_default_optimizer_is_resolved_while_explicit_target_is_preserved(
+    backend, expected_optimizer
+) -> None:
+    assert _resolve_role_backends(backend, "openai_chat", "minimax_chat") == (
+        expected_optimizer,
+        "minimax_chat",
+    )
+
+
 def test_explicit_target_is_preserved_when_optimizer_is_default() -> None:
     assert _resolve_role_backends("cursor", "openai_chat", "minimax_chat") == (
         "openai_chat",
@@ -54,9 +96,8 @@ def test_explicit_target_is_preserved_when_optimizer_is_default() -> None:
     )
 
 
-def test_copilot_maps_both_roles_to_the_local_cli() -> None:
-    # `copilot` is the only fully local option: no cloud API key is needed
-    # because the CLI carries its own sign-in.
+def test_copilot_maps_both_roles_to_the_cli_authenticated_backend() -> None:
+    # No separate provider API key is needed because the CLI carries sign-in.
     assert _resolve_role_backends("copilot", *_BASE_CONFIG) == ("copilot_chat", "copilot_chat")
     assert _resolve_role_backends("copilot_chat", *_BASE_CONFIG) == (
         "copilot_chat",

@@ -1,8 +1,9 @@
 """GitHub Copilot CLI chat backend.
 
-Drives the local `copilot` CLI as a chat model so a full SkillOpt run
-(optimizer *and* target) can execute with no cloud API key — the CLI uses the
-operator's existing Copilot subscription and OS credential store.
+Drives the locally installed `copilot` CLI as a chat model so a full SkillOpt
+run (optimizer *and* target) can execute with no separate provider API key.
+Inference still uses the GitHub Copilot cloud service through the operator's
+existing subscription and OS credential store.
 
 The CLI is a single-shot agent, not a chat-completions endpoint, so `system`
 and `user` are composed into one prompt. Output is captured as JSONL
@@ -24,7 +25,7 @@ import time
 from typing import Any
 
 from .backend_config import get_copilot_chat_config
-from .common import TokenTracker
+from .common import CompatAssistantMessage, TokenTracker
 
 tracker = TokenTracker()
 
@@ -87,12 +88,18 @@ def _invoke(prompt: str, *, model: str, timeout: float | None) -> str:
         "none",
         "--disable-builtin-mcps",
         "--no-custom-instructions",
+        # A chat backend must behave like a completions endpoint, not an agent.
+        # An empty allowlist removes built-in read/shell/write/web tools.
+        "--available-tools=",
     ]
     chosen = model or str(config.get("model") or "")
     if chosen:
         cmd.extend(["--model", chosen])
 
     env = os.environ.copy()
+    # The parent may use this for its own Copilot session. It must not silently
+    # turn a SkillOpt child into an unrestricted agent.
+    env.pop("COPILOT_ALLOW_ALL", None)
     home = str(config.get("home") or "")
     if home:
         env["COPILOT_HOME"] = home
@@ -181,18 +188,23 @@ def chat_optimizer_messages(
     retries: int = 5,
     stage: str = "optimizer",
     reasoning_effort: str | None = None,
+    *,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    return_message: bool = False,
     timeout: float | None = None,
-    **_ignored: Any,
-) -> tuple[str, dict[str, int]]:
+) -> tuple[str | CompatAssistantMessage, dict[str, int]]:
     del max_completion_tokens, reasoning_effort
+    _reject_unsupported_tools(tools, tool_choice)
     config = get_copilot_chat_config()
-    return _chat_impl(
+    text, usage = _chat_impl(
         _messages_to_prompt(messages),
         retries,
         stage,
         model=str(config.get("optimizer_model") or ""),
         timeout=timeout,
     )
+    return (CompatAssistantMessage(content=text) if return_message else text), usage
 
 
 def chat_target_messages(
@@ -201,18 +213,34 @@ def chat_target_messages(
     retries: int = 5,
     stage: str = "target",
     reasoning_effort: str | None = None,
+    *,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    return_message: bool = False,
     timeout: float | None = None,
-    **_ignored: Any,
-) -> tuple[str, dict[str, int]]:
+) -> tuple[str | CompatAssistantMessage, dict[str, int]]:
     del max_completion_tokens, reasoning_effort
+    _reject_unsupported_tools(tools, tool_choice)
     config = get_copilot_chat_config()
-    return _chat_impl(
+    text, usage = _chat_impl(
         _messages_to_prompt(messages),
         retries,
         stage,
         model=str(config.get("target_model") or ""),
         timeout=timeout,
     )
+    return (CompatAssistantMessage(content=text) if return_message else text), usage
+
+
+def _reject_unsupported_tools(
+    tools: list[dict[str, Any]] | None,
+    tool_choice: str | dict[str, Any] | None,
+) -> None:
+    if tools or tool_choice is not None:
+        raise NotImplementedError(
+            "copilot_chat does not support caller-supplied tools or tool_choice; "
+            "use a tool-capable chat backend for this environment"
+        )
 
 
 def get_token_summary() -> dict[str, dict[str, int]]:

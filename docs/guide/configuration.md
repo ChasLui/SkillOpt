@@ -49,9 +49,10 @@ model:
 | `cursor_exec` | — | ✓ | Cursor Agent CLI execution harness |
 | `copilot_exec` | — | ✓ | GitHub Copilot CLI execution harness |
 
-`copilot_chat` is the only backend that fills **both** roles from a locally
-authenticated CLI, so `--backend copilot` runs a complete training loop with no
-cloud API key. Sign in once with `copilot` (GitHub Copilot CLI) beforehand.
+`copilot_chat` fills **both** roles through a locally installed,
+CLI-authenticated client, so `--backend copilot` runs a complete training loop
+without a separate provider API key. Inference still uses the GitHub Copilot
+cloud service. Sign in once with `copilot` (GitHub Copilot CLI) beforehand.
 Expect roughly 20-40 s per call: the CLI is an agent, not a completions
 endpoint, so a full-size run is far slower than a hosted backend. It also
 reports no token counts, so usage totals are zero.
@@ -226,19 +227,20 @@ MCP servers automatically.
 
 `copilot_chat` drives the GitHub Copilot CLI as a chat model for either role.
 Because the CLI carries its own sign-in, selecting it for both roles
-(`--backend copilot`) makes a run fully local:
+(`--backend copilot`) avoids separate provider API-key configuration:
 
 ```bash
 copilot                      # sign in once, then exit
-skillopt-train --cfg configs/train/default.yaml --backend copilot
+skillopt-train --config configs/train/default.yaml --backend copilot
 ```
 
-Calls are made with built-in MCP servers and custom instructions disabled so
-the model sees only the prompt SkillOpt sends, and `--allow-all-tools` is never
-passed for chat calls. `copilot_exec` is the separate target-only harness that
-runs the CLI as an agent inside a benchmark workspace; unlike the other exec
-harnesses it does not grant unattended tool use unless
-`COPILOT_EXEC_ALLOW_ALL_TOOLS` is set.
+Chat calls use an empty tool allowlist and disable built-in MCP servers and
+custom instructions, so the model sees only the prompt SkillOpt sends.
+`COPILOT_ALLOW_ALL` is removed from child environments, and
+`--allow-all-tools` is never passed for chat calls. `copilot_exec` is the
+separate target-only harness that runs the CLI as an agent inside a benchmark
+workspace; unlike the other exec harnesses it does not grant unattended tool
+use unless `COPILOT_EXEC_ALLOW_ALL_TOOLS` is set.
 
 ### Three OpenAI-compatible paths
 

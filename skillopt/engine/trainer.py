@@ -462,13 +462,6 @@ def _resolve_role_backends(
     left at its default value counts as unset; a role the operator pointed at
     something else always wins.
     """
-    both_default = (
-        optimizer_backend in _ROLE_BACKEND_DEFAULTS
-        and target_backend in _ROLE_BACKEND_DEFAULTS
-    )
-    if optimizer_backend and target_backend and not both_default:
-        return optimizer_backend, target_backend
-
     if backend in {"claude", "claude_chat"}:
         # A chat backend fills BOTH roles, so -- like copilot -- a role pinned
         # to a default (including the base config's truthy openai_chat) must be
@@ -491,7 +484,7 @@ def _resolve_role_backends(
         if target_backend in _ROLE_BACKEND_DEFAULTS:
             target_backend = "cursor_exec"
     elif backend in {"copilot", "copilot_chat"}:
-        # Both roles on the local CLI: the only fully local configuration.
+        # Both roles use the locally installed, CLI-authenticated backend.
         if optimizer_backend in _ROLE_BACKEND_DEFAULTS:
             optimizer_backend = "copilot_chat"
         if target_backend in _ROLE_BACKEND_DEFAULTS:

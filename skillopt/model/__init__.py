@@ -285,6 +285,9 @@ def chat_optimizer_messages(
             max_completion_tokens=max_completion_tokens,
             retries=retries,
             stage=stage,
+            tools=tools,
+            tool_choice=tool_choice,
+            return_message=return_message,
             timeout=timeout,
         )
     if get_optimizer_backend() == "claude_chat":
@@ -376,6 +379,9 @@ def chat_target_messages(
             max_completion_tokens=max_completion_tokens,
             retries=retries,
             stage=stage,
+            tools=tools,
+            tool_choice=tool_choice,
+            return_message=return_message,
             timeout=timeout,
         )
     if get_target_backend() == "claude_chat":

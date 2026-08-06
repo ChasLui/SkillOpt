@@ -1361,6 +1361,9 @@ def run_copilot_exec(
             cmd.extend(["--add-dir", path])
 
         env = os.environ.copy()
+        # Configuration is authoritative: an inherited CLI-wide opt-in must
+        # not bypass SkillOpt's allow_all_tools and allow_file_edits gates.
+        env.pop("COPILOT_ALLOW_ALL", None)
         home = str(config.get("home") or "")
         if home:
             env["COPILOT_HOME"] = home
