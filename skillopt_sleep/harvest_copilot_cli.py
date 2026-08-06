@@ -27,6 +27,7 @@ from skillopt_sleep.harvest import (
     _is_meta_prompt,
     _project_matches,
 )
+from skillopt_sleep.staging import redact_secrets
 from skillopt_sleep.types import SessionDigest
 
 # Bound per-session text so one pathological session cannot dominate a night's
@@ -46,7 +47,9 @@ def default_session_store() -> str:
 def _clip(text: Any) -> str:
     if not isinstance(text, str):
         return ""
-    text = text.strip()
+    # Redact before truncating: clipping first could retain and persist only a
+    # secret fragment that no longer matches the shared redaction patterns.
+    text = str(redact_secrets(text)).strip()
     return text[:_MAX_TEXT_CHARS]
 
 

@@ -90,6 +90,45 @@ def test_maps_session_and_turn_fields(tmp_path) -> None:
     assert d.raw_path.endswith("#s1")
 
 
+def test_redacts_user_and_assistant_secrets_before_harvesting(tmp_path) -> None:
+    user_secret = "sk-abcdefghijklmnopqrstuvwxyz1234567890"
+    assistant_secret = "super-secret-value-123456"
+    path = _store(
+        tmp_path,
+        [("s1", r"C:\proj", "repo", "main", "2026-01-01 10:00:00", "2026-01-01 10:30:00")],
+        [
+            (
+                "s1",
+                0,
+                f"Use Authorization: Bearer {user_secret} for this task",
+                f"Configured api_key={assistant_secret}",
+                "2026-01-01 10:00:00",
+            )
+        ],
+    )
+
+    [digest] = harvest_copilot_cli(path, scope="all")
+    harvested = "\n".join(digest.user_prompts + digest.assistant_finals)
+    assert user_secret not in harvested
+    assert assistant_secret not in harvested
+    assert "[REDACTED" in harvested
+
+
+def test_redacts_secrets_before_text_is_clipped(tmp_path) -> None:
+    secret = "sk-abcdefghijklmnopqrstuvwxyz1234567890"
+    # The token begins just before the 4000-char boundary. Clipping first would
+    # leave a secret fragment that no longer matches the redaction pattern.
+    prompt = "x" * (4000 - 5) + secret
+    path = _store(
+        tmp_path,
+        [("s1", r"C:\proj", "repo", "main", "2026-01-01 10:00:00", "2026-01-01 10:30:00")],
+        [("s1", 0, prompt, "done", "2026-01-01 10:00:00")],
+    )
+
+    [digest] = harvest_copilot_cli(path, scope="all")
+    assert "sk-" not in digest.user_prompts[0]
+
+
 def test_engine_self_calls_are_filtered(tmp_path) -> None:
     # SkillOpt's own Copilot backend writes to this same store; harvesting them
     # would train the engine on its own output.
@@ -269,4 +308,3 @@ def test_connect_failure_fails_closed(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr("skillopt_sleep.harvest_copilot_cli._connect", _boom)
     assert harvest_copilot_cli(path, scope="all") == []
-

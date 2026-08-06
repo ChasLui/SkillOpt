@@ -74,12 +74,13 @@ def _is_refusal(response: str) -> bool:
     # Strip leading markdown markers -- blockquote (>), list bullets (-, *),
     # numbered items (1. / 1)), emphasis and headings -- BEFORE bounding the
     # head, so a refusal cannot hide behind >160 marker characters.
-    head = re.sub(r"^(?:[>\-*_#\s]|\d+[.)])+", "", text.lower())[:160]
+    content = re.sub(r"^(?:[>\-*_#\s]|\d+[.)])+", "", text)
+    head = content[:160].lower()
     if not any(head.startswith(p) for p in _REFUSAL_PREFIXES):
         return False
     # A long response that opens with an abstention still did the work of
     # explaining why; only terse dead-ends are refusals.
-    return len(text) < 600
+    return len(content) < 600
 
 
 def _check(op: str, arg: Any, response: str,
