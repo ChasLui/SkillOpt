@@ -866,6 +866,8 @@ class ReflACTTrainer:
             raise ValueError(f"batch_size must be positive, got {batch_size}")
         if accumulation <= 0:
             raise ValueError(f"accumulation must be positive, got {accumulation}")
+        if merge_bs < 2:
+            raise ValueError(f"merge_batch_size must be >= 2, got {merge_bs}")
 
         train_size = _resolve_train_size(cfg, dataloader)
         steps_per_epoch = math.ceil(train_size / (batch_size * accumulation))

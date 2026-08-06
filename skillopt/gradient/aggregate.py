@@ -87,6 +87,7 @@ def _hierarchical_merge(
     if len(patches) == 1:
         return patches[0]
 
+    batch_size = max(2, batch_size)
     current = list(patches)
     level = 0
     while len(current) > 1:
