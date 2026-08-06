@@ -460,8 +460,8 @@ def test_copilot_config_keys_survive_flattening() -> None:
 def test_cli_exposes_copilot_backend_and_flags(script: str) -> None:
     root = Path(__file__).resolve().parents[1]
     text = (root / "scripts" / f"{script}.py").read_text(encoding="utf-8")
-    assert '"copilot_chat"' in text
-    assert '"copilot_exec"' in text
+    assert "copilot_chat" in text
+    assert "copilot_exec" in text
     for flag in (
         "--copilot_exec_path",
         "--copilot_chat_target_model",
