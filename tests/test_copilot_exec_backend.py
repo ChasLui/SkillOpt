@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+import scripts.eval_only as eval_script
 import scripts.train as train_script
 import skillopt.model as model
 from skillopt.config import flatten_config
@@ -247,6 +248,142 @@ def test_train_copilot_exec_omits_inherited_openai_target_model(monkeypatch) -> 
 
     assert cfg["target_backend"] == "copilot_exec"
     assert cfg["target_model"] == ""
+
+
+def _write_copilot_yaml_config(tmp_path: Path) -> Path:
+    root = Path(__file__).resolve().parents[1]
+    config_path = tmp_path / "copilot_exec.yaml"
+    config_path.write_text(
+        f"""\
+_base_: {json.dumps(str(root / "configs" / "searchqa" / "default.yaml"))}
+
+model:
+  backend: copilot_exec
+
+env:
+  out_root: {json.dumps(str(tmp_path / "out"))}
+""",
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def test_train_resolves_copilot_exec_from_structured_yaml(monkeypatch, tmp_path) -> None:
+    config_path = _write_copilot_yaml_config(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["skillopt-train", "--config", str(config_path)],
+    )
+
+    cfg = train_script.load_config(train_script.parse_args())
+
+    assert cfg["optimizer_backend"] == "openai_chat"
+    assert cfg["target_backend"] == "copilot_exec"
+    assert cfg["target_model"] == ""
+
+
+def test_train_keeps_default_structured_azure_backend(monkeypatch) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "skillopt-train",
+            "--config",
+            str(root / "configs" / "searchqa" / "default.yaml"),
+        ],
+    )
+
+    cfg = train_script.load_config(train_script.parse_args())
+
+    assert cfg["model_backend"] == "azure_openai"
+    assert cfg["optimizer_backend"] == "openai_chat"
+    assert cfg["target_backend"] == "openai_chat"
+    assert cfg["optimizer_model"] == "gpt-5.5"
+    assert cfg["target_model"] == "gpt-5.5"
+
+
+def test_train_resolves_copilot_exec_from_legacy_flat_yaml(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "copilot_exec_flat.yaml"
+    config_path.write_text(
+        f"""\
+backend: copilot_exec
+optimizer_backend: openai_chat
+target_backend: openai_chat
+optimizer_model: gpt-5.5
+target_model: gpt-5.5
+env: searchqa
+out_root: {json.dumps(str(tmp_path / "out"))}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["skillopt-train", "--config", str(config_path)],
+    )
+
+    cfg = train_script.load_config(train_script.parse_args())
+
+    assert cfg["model_backend"] == "copilot_exec"
+    assert cfg["optimizer_backend"] == "openai_chat"
+    assert cfg["target_backend"] == "copilot_exec"
+    assert cfg["target_model"] == ""
+
+
+def test_eval_resolves_copilot_exec_from_structured_yaml(monkeypatch, tmp_path) -> None:
+    config_path = _write_copilot_yaml_config(tmp_path)
+    skill_path = tmp_path / "skill.md"
+    skill_path.write_text("# Test skill\n", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "skillopt-eval",
+            "--config",
+            str(config_path),
+            "--skill",
+            str(skill_path),
+        ],
+    )
+
+    observed = {}
+    monkeypatch.setattr(eval_script, "configure_azure_openai", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        eval_script,
+        "set_optimizer_backend",
+        lambda value: observed.__setitem__("optimizer_backend", value),
+    )
+    monkeypatch.setattr(
+        eval_script,
+        "set_target_backend",
+        lambda value: observed.__setitem__("target_backend", value),
+    )
+    monkeypatch.setattr(
+        eval_script,
+        "set_optimizer_deployment",
+        lambda value: observed.__setitem__("optimizer_model", value),
+    )
+
+    class StopAfterModelConfiguration(Exception):
+        pass
+
+    def capture_target_model(value):
+        observed["target_model"] = value
+        raise StopAfterModelConfiguration
+
+    monkeypatch.setattr(eval_script, "set_target_deployment", capture_target_model)
+
+    with pytest.raises(StopAfterModelConfiguration):
+        eval_script.main()
+
+    assert observed == {
+        "optimizer_backend": "openai_chat",
+        "target_backend": "copilot_exec",
+        "optimizer_model": "gpt-5.5",
+        "target_model": "",
+    }
 
 
 def test_train_copilot_exec_preserves_explicit_target_model(monkeypatch) -> None:
