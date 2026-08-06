@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -65,10 +67,13 @@ def test_aliases_normalize_to_copilot_exec(alias: str) -> None:
 
 
 @pytest.mark.parametrize("alias", ["copilot", "copilot_cli", "github_copilot"])
-def test_bare_copilot_aliases_normalize_to_the_fully_local_chat_backend(
+def test_bare_copilot_aliases_normalize_to_the_cli_authenticated_chat_backend(
     alias: str,
 ) -> None:
     assert normalize_backend_name(alias) == "copilot_chat"
+    assert model.set_backend(alias) == "copilot_chat"
+    assert backend_config.get_optimizer_backend() == "copilot_chat"
+    assert backend_config.get_target_backend() == "copilot_chat"
 
 
 def test_set_backend_routes_target_to_copilot_and_keeps_chat_optimizer() -> None:
@@ -119,16 +124,19 @@ def test_parse_jsonl_concatenates_assistant_messages_and_ignores_noise() -> None
             json.dumps({"type": "tool.call", "data": {"content": "ignored"}}),
             json.dumps({"type": "assistant.message", "data": {"content": "first"}}),
             "{ broken json",
+            "[]",
+            "null",
+            json.dumps({"type": "assistant.message", "data": "invalid"}),
             json.dumps({"type": "assistant.message", "data": {"content": "second"}}),
             json.dumps({"type": "assistant.message", "data": {}}),
         ]
     )
-    assert harness._parse_copilot_jsonl(raw) == "first\nsecond"
+    assert copilot_backend.parse_copilot_jsonl(raw) == "first\nsecond"
 
 
 def test_parse_jsonl_returns_empty_for_no_assistant_messages() -> None:
-    assert harness._parse_copilot_jsonl('{"type":"tool.call","data":{}}') == ""
-    assert harness._parse_copilot_jsonl("") == ""
+    assert copilot_backend.parse_copilot_jsonl('{"type":"tool.call","data":{}}') == ""
+    assert copilot_backend.parse_copilot_jsonl("") == ""
 
 
 def _fake_run(captured: dict, stdout: str, returncode: int = 0):
@@ -216,7 +224,8 @@ def test_copilot_backends_keep_a_real_deployment_fallback() -> None:
     assert default_model_for_backend("copilot_chat") == "gpt-4o"
 
 
-def test_no_response_error_includes_cli_output(monkeypatch, tmp_path) -> None:    # copilot_exec persists no artifacts, so a bare "returned no response"
+def test_no_response_error_includes_cli_output(monkeypatch, tmp_path) -> None:
+    # copilot_exec persists no artifacts, so a bare "returned no response"
     # would leave an empty/invalid JSONL stream undebuggable.
     model.set_backend("copilot")
     model.configure_copilot_exec(path="copilot", home="", allow_all_tools=False)
@@ -459,19 +468,36 @@ def test_copilot_config_keys_survive_flattening() -> None:
 @pytest.mark.parametrize("script", ["train", "eval_only"])
 def test_cli_exposes_copilot_backend_and_flags(script: str) -> None:
     root = Path(__file__).resolve().parents[1]
-    text = (root / "scripts" / f"{script}.py").read_text(encoding="utf-8")
-    assert "copilot_chat" in text
-    assert "copilot_exec" in text
+    script_path = root / "scripts" / f"{script}.py"
+    result = subprocess.run(
+        [sys.executable, str(script_path), "--help"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "copilot_chat" in result.stdout
+    assert "copilot_exec" in result.stdout
     for flag in (
         "--copilot_exec_path",
+        "--copilot_exec_home",
+        "--copilot_exec_allow_all_tools",
+        "--copilot_chat_optimizer_model",
         "--copilot_chat_target_model",
         "--copilot_chat_timeout",
     ):
-        assert flag in text
+        assert flag in result.stdout
     # train.py delegates backend configuration to the trainer; eval_only wires
-    # it directly. Assert whichever applies so the wiring can't silently drop.
-    applier = (
-        text if script == "eval_only" else (root / "skillopt" / "engine" / "trainer.py").read_text(encoding="utf-8")
+    # it directly. Inspect call nodes rather than source spelling/formatting.
+    applier_path = (
+        script_path
+        if script == "eval_only"
+        else root / "skillopt" / "engine" / "trainer.py"
     )
-    assert "configure_copilot_chat" in applier
-    assert "configure_copilot_exec" in applier
+    tree = ast.parse(applier_path.read_text(encoding="utf-8"))
+    calls = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert {"configure_copilot_chat", "configure_copilot_exec"} <= calls

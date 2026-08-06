@@ -464,7 +464,7 @@ def _resolve_role_backends(
     something else always wins.
     """
     backend = normalize_backend_name(backend)
-    if backend in {"claude", "claude_chat"}:
+    if backend == "claude_chat":
         # A chat backend fills BOTH roles, so -- like copilot -- a role pinned
         # to a default (including the base config's truthy openai_chat) must be
         # overridden. `x = x or ...` would leave openai_chat in place.
@@ -481,11 +481,11 @@ def _resolve_role_backends(
         optimizer_backend = optimizer_backend or "openai_chat"
         if target_backend in _ROLE_BACKEND_DEFAULTS:
             target_backend = "claude_code_exec"
-    elif backend in {"cursor", "cursor_exec"}:
+    elif backend == "cursor_exec":
         optimizer_backend = optimizer_backend or "openai_chat"
         if target_backend in _ROLE_BACKEND_DEFAULTS:
             target_backend = "cursor_exec"
-    elif backend in {"copilot", "copilot_chat"}:
+    elif backend == "copilot_chat":
         # Both roles use the locally installed, CLI-authenticated backend.
         if optimizer_backend in _ROLE_BACKEND_DEFAULTS:
             optimizer_backend = "copilot_chat"
@@ -495,7 +495,7 @@ def _resolve_role_backends(
         optimizer_backend = optimizer_backend or "openai_chat"
         if target_backend in _ROLE_BACKEND_DEFAULTS:
             target_backend = "copilot_exec"
-    elif backend in {"qwen", "qwen_chat"}:
+    elif backend == "qwen_chat":
         optimizer_backend = optimizer_backend or "openai_chat"
         if target_backend in _ROLE_BACKEND_DEFAULTS:
             target_backend = "qwen_chat"

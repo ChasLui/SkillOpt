@@ -18,6 +18,10 @@ from skillopt.model.backend_config import (
     get_cursor_exec_config,
     get_target_backend,
 )
+from skillopt.model.copilot_backend import (
+    build_copilot_subprocess_env,
+    parse_copilot_jsonl,
+)
 
 ANSWER_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -1360,13 +1364,8 @@ def run_copilot_exec(
         for path in add_dirs:
             cmd.extend(["--add-dir", path])
 
-        env = os.environ.copy()
-        # Configuration is authoritative: an inherited CLI-wide opt-in must
-        # not bypass SkillOpt's allow_all_tools and allow_file_edits gates.
-        env.pop("COPILOT_ALLOW_ALL", None)
         home = str(config.get("home") or "")
-        if home:
-            env["COPILOT_HOME"] = home
+        env = build_copilot_subprocess_env(home)
 
         try:
             proc = subprocess.run(
@@ -1400,7 +1399,7 @@ def run_copilot_exec(
                 f"Copilot CLI failed with exit code {proc.returncode}: {detail}"
             )
 
-        response = _parse_copilot_jsonl(stdout)
+        response = parse_copilot_jsonl(stdout)
         if response:
             return response, combined
 
@@ -1410,24 +1409,6 @@ def run_copilot_exec(
     # bounded tail so an empty/invalid JSONL stream is debuggable.
     detail = combined.strip()[-4000:]
     raise RuntimeError(f"{last_error}\n{detail}" if detail else last_error)
-
-
-def _parse_copilot_jsonl(raw: str) -> str:
-    """Concatenate ``assistant.message`` content from a Copilot JSONL stream."""
-    parts: list[str] = []
-    for line in (raw or "").splitlines():
-        line = line.strip()
-        if not line or not line.startswith("{"):
-            continue
-        try:
-            obj = json.loads(line)
-        except Exception:
-            continue
-        if obj.get("type") == "assistant.message":
-            content = (obj.get("data") or {}).get("content")
-            if isinstance(content, str) and content:
-                parts.append(content)
-    return "\n".join(parts).strip()
 
 
 def run_target_exec(

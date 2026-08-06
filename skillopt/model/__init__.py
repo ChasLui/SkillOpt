@@ -30,6 +30,7 @@ from skillopt.model.backend_config import (  # noqa: F401
     set_optimizer_backend,
     set_target_backend,
 )
+from skillopt.model.common import normalize_backend_name
 
 
 def set_backend(name: str | None) -> str:
@@ -39,20 +40,16 @@ def set_backend(name: str | None) -> str:
     target. Keep that entry point so older scripts continue to work, while
     mapping it onto the split optimizer/target backend model.
     """
-    normalized = str(name or "azure_openai").strip().lower()
-    if normalized in {"azure_openai", "openai_chat", "azure", "azure-openai"}:
+    normalized = normalize_backend_name(name)
+    if normalized in {"azure_openai", "openai_chat"}:
         set_optimizer_backend("openai_chat")
         set_target_backend("openai_chat")
         return "azure_openai"
-    if normalized in {"claude", "claude_chat", "anthropic"}:
+    if normalized == "claude_chat":
         set_optimizer_backend("claude_chat")
         set_target_backend("claude_chat")
         return "claude_chat"
-    if normalized == "codex":
-        set_optimizer_backend("codex_exec")
-        set_target_backend("codex_exec")
-        return "codex"
-    if normalized == "codex_exec":
+    if normalized in {"codex", "codex_exec"}:
         set_optimizer_backend("codex_exec")
         set_target_backend("codex_exec")
         return normalized
@@ -60,11 +57,11 @@ def set_backend(name: str | None) -> str:
         set_optimizer_backend("openai_chat")
         set_target_backend(normalized)
         return normalized
-    if normalized in {"cursor", "cursor_agent", "cursor_exec"}:
+    if normalized == "cursor_exec":
         set_optimizer_backend("openai_chat")
         set_target_backend("cursor_exec")
         return "cursor_exec"
-    if normalized in {"copilot", "copilot_cli", "github_copilot", "copilot_chat"}:
+    if normalized == "copilot_chat":
         # The CLI-authenticated backend drives both roles without a separate
         # provider API key; inference still uses the Copilot cloud service.
         set_optimizer_backend("copilot_chat")
@@ -74,15 +71,15 @@ def set_backend(name: str | None) -> str:
         set_optimizer_backend("openai_chat")
         set_target_backend("copilot_exec")
         return "copilot_exec"
-    if normalized in {"qwen", "qwen_chat"}:
+    if normalized == "qwen_chat":
         set_optimizer_backend("openai_chat")
         set_target_backend("qwen_chat")
         return "qwen_chat"
-    if normalized in {"minimax", "minimax_chat"}:
+    if normalized == "minimax_chat":
         set_optimizer_backend("openai_chat")
         set_target_backend("minimax_chat")
         return "minimax_chat"
-    if normalized in {"openai_compatible", "openai_compatible_chat", "openai-compatible", "compat"}:
+    if normalized == "openai_compatible":
         set_optimizer_backend("openai_compatible")
         set_target_backend("openai_compatible")
         return "openai_compatible"

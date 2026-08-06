@@ -56,6 +56,8 @@ cloud service. Sign in once with `copilot` (GitHub Copilot CLI) beforehand.
 Expect roughly 20-40 s per call: the CLI is an agent, not a completions
 endpoint, so a full-size run is far slower than a hosted backend. It also
 reports no token counts, so usage totals are zero.
+It does not support caller-supplied tools or structured tool calls; environments
+that require those features must use another chat backend.
 
 The current MiniMax adapter has one shared deployment. Set
 `model.minimax_model` when MiniMax is the target; a mixed-backend run cannot
@@ -230,8 +232,8 @@ Because the CLI carries its own sign-in, selecting it for both roles
 (`--backend copilot`) avoids separate provider API-key configuration:
 
 ```bash
-copilot                      # sign in once, then exit
-skillopt-train --config configs/train/default.yaml --backend copilot
+copilot login
+skillopt-train --config configs/searchqa/default.yaml --backend copilot
 ```
 
 Chat calls use an empty tool allowlist and disable built-in MCP servers and

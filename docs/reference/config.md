@@ -71,7 +71,7 @@ defaults to `claude` and can be overridden with `CLAUDE_CLI_BIN`.
 | `model.cursor_exec_sandbox` | Cursor sandbox mode: `enabled` (default) or `disabled`; file-edit rollouts require `enabled` |
 | `model.copilot_exec_path` | GitHub Copilot CLI executable path; default `copilot` |
 | `model.copilot_exec_home` | Optional `COPILOT_HOME` override isolating CLI config |
-| `model.copilot_exec_allow_all_tools` | Opt in to `--allow-all-tools`; `false` by default, required for file-edit rollouts |
+| `model.copilot_exec_allow_all_tools` | Optional opt-in to `--allow-all-tools`; unset by default so `COPILOT_EXEC_ALLOW_ALL_TOOLS` remains authoritative |
 | `model.copilot_chat_optimizer_model` / `model.copilot_chat_target_model` | Optional per-role `--model` IDs for `copilot_chat` |
 | `model.copilot_chat_timeout` | Per-call timeout in seconds for `copilot_chat` |
 

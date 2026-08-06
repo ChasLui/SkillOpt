@@ -32,6 +32,15 @@ tracker = TokenTracker()
 _ZERO_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
 
+def build_copilot_subprocess_env(home: str = "") -> dict[str, str]:
+    """Build a child environment without inherited unattended-tool approval."""
+    env = os.environ.copy()
+    env.pop("COPILOT_ALLOW_ALL", None)
+    if home:
+        env["COPILOT_HOME"] = home
+    return env
+
+
 def _compose_prompt(system: str, user: str) -> str:
     system = (system or "").strip()
     user = (user or "").strip()
@@ -56,7 +65,8 @@ def _messages_to_prompt(messages: list[dict[str, Any]]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _parse_jsonl_response(raw: str) -> str:
+def parse_copilot_jsonl(raw: str) -> str:
+    """Concatenate assistant text from a Copilot JSONL event stream."""
     parts: list[str] = []
     for line in (raw or "").splitlines():
         line = line.strip()
@@ -64,10 +74,15 @@ def _parse_jsonl_response(raw: str) -> str:
             continue
         try:
             obj = json.loads(line)
-        except Exception:
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
             continue
         if obj.get("type") == "assistant.message":
-            content = (obj.get("data") or {}).get("content")
+            data = obj.get("data")
+            if not isinstance(data, dict):
+                continue
+            content = data.get("content")
             if isinstance(content, str) and content:
                 parts.append(content)
     return "\n".join(parts).strip()
@@ -96,13 +111,8 @@ def _invoke(prompt: str, *, model: str, timeout: float | None) -> str:
     if chosen:
         cmd.extend(["--model", chosen])
 
-    env = os.environ.copy()
-    # The parent may use this for its own Copilot session. It must not silently
-    # turn a SkillOpt child into an unrestricted agent.
-    env.pop("COPILOT_ALLOW_ALL", None)
     home = str(config.get("home") or "")
-    if home:
-        env["COPILOT_HOME"] = home
+    env = build_copilot_subprocess_env(home)
 
     proc = subprocess.run(
         cmd,
@@ -116,7 +126,7 @@ def _invoke(prompt: str, *, model: str, timeout: float | None) -> str:
     if proc.returncode != 0:
         detail = ((proc.stderr or proc.stdout) or "").strip()[:4000]
         raise RuntimeError(f"Copilot CLI failed with exit code {proc.returncode}: {detail}")
-    return _parse_jsonl_response(proc.stdout or "")
+    return parse_copilot_jsonl(proc.stdout or "")
 
 
 def _chat_impl(
