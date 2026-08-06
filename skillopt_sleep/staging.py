@@ -265,6 +265,13 @@ def _safe_skill_name(name: object) -> str:
         return ""
     if any(ord(ch) < 32 or ord(ch) == 127 for ch in candidate):
         return ""
+    # The name becomes a filename, so reject what Windows cannot store. Without
+    # this the write fails with an OSError from deep inside staging instead of
+    # a StagingError naming the offending skill.
+    if any(ch in candidate for ch in ':*?"<>|'):
+        return ""
+    if candidate[-1] in {".", " "}:
+        return ""
     return candidate
 
 
@@ -272,10 +279,22 @@ def _safe_live_path(path: object) -> str:
     """Return an absolute, traversal-free ``*.md`` target path, else ""."""
     if not isinstance(path, str) or not path.strip():
         return ""
-    candidate = path.strip()
-    if candidate.startswith("~") or not os.path.isabs(candidate):
+    raw = path.strip()
+    if raw.startswith("~"):
         return ""
-    if os.path.normpath(candidate) != candidate:
+    # Reject traversal on the RAW input, before normalising. Normalising first
+    # would silently resolve "/live/../../etc/SKILL.md" into "/etc/SKILL.md"
+    # and then accept it, because no ".." survives the collapse -- turning a
+    # traversal guard into a traversal helper.
+    if any(part in {os.curdir, os.pardir} for part in raw.replace("\\", "/").split("/")):
+        return ""
+    # Only then normalise, so a caller is not forced to hand over an already
+    # canonical string. The old form demanded input == normpath(input), which
+    # rejected benign duplicate separators and every forward-slash absolute
+    # path on Windows (normpath rewrites those to backslashes, so a safe path
+    # never matched itself).
+    candidate = os.path.normpath(raw)
+    if not os.path.isabs(candidate):
         return ""
     if not candidate.endswith(".md"):
         return ""
@@ -335,17 +354,25 @@ def skill_proposal_rows(proposals: Sequence[SkillProposal]) -> List[Dict[str, An
         if any(row["skill_name"] == name for row in rows):
             raise StagingError(f"duplicate skill name in staging fan-out: {name!r}")
         proposed_file = proposal_filename(name)
-        file_key = proposed_file.lower()
+        # casefold, not lower: it folds Unicode pairs lower() leaves distinct,
+        # which is the comparison a case-insensitive filesystem actually makes.
+        file_key = proposed_file.casefold()
         if file_key in seen_files:
             raise StagingError(
                 f"skills {seen_files[file_key]!r} and {name!r} stage to the same "
                 f"file on a case-insensitive filesystem: {proposed_file}"
             )
-        if live in seen_paths:
+        # Same reasoning for the live target: /x/A.md and /x/a.md are one file
+        # on macOS and Windows, so an exact-string check lets two skills
+        # overwrite each other's live document. casefold rather than
+        # os.path.normcase: normcase only folds case on Windows, so it is a
+        # no-op on the macOS box where the collision is just as real.
+        live_key = live.casefold()
+        if live_key in seen_paths:
             raise StagingError(
-                f"skills {seen_paths[live]!r} and {name!r} target the same file: {live}"
+                f"skills {seen_paths[live_key]!r} and {name!r} target the same file: {live}"
             )
-        seen_paths[live] = name
+        seen_paths[live_key] = name
         seen_files[file_key] = name
         rows.append({
             "skill_name": name,
@@ -363,6 +390,11 @@ def write_skill_proposals(
     Every proposal is validated before anything is written, so a rejected
     fan-out leaves no partial files behind.
     """
+    # Materialise once. The annotation says Sequence but nothing enforces it,
+    # and a generator would be drained by the validation pass — leaving the
+    # write loop with nothing to iterate and returning a full set of manifest
+    # rows for files that were never created.
+    proposals = list(proposals)
     rows = skill_proposal_rows(proposals)
     if not rows:
         return rows

@@ -74,6 +74,40 @@ class TestSkillProposalRows(unittest.TestCase):
             self.assertEqual(len(staged), len(rows),
                              "a manifest row exists whose staged file was overwritten")
 
+    def test_live_paths_differing_only_by_case_are_refused(self):
+        # os.path.normcase would not catch this: it only folds case on Windows,
+        # so it is a no-op on the macOS filesystem where /x/A.md and /x/a.md
+        # are nevertheless the same file.
+        with self.assertRaises(StagingError):
+            skill_proposal_rows([_proposal("alpha", live="/tmp/live/A.md"),
+                                 _proposal("beta", live="/tmp/live/a.md")])
+
+    def test_a_generator_of_proposals_still_writes_every_file(self):
+        # The annotation says Sequence but nothing enforces it. Validation used
+        # to drain a generator, leaving the write loop empty and returning a
+        # full set of manifest rows for files that were never created.
+        with tempfile.TemporaryDirectory() as out:
+            gen = (_proposal(n, live=f"/tmp/live/{n}/SKILL.md") for n in ("alpha", "beta"))
+            rows = write_skill_proposals(out, gen)
+            staged = [f for f in os.listdir(out) if f.startswith("proposed_")]
+            self.assertEqual(len(staged), len(rows))
+            self.assertEqual(len(rows), 2)
+
+    def test_names_windows_cannot_store_are_refused_cleanly(self):
+        # These reach the filesystem as a filename. Without an explicit guard
+        # they raise OSError from inside the write instead of a StagingError
+        # naming the offending skill.
+        for bad in ["a:b", "a*b", "a?b", 'a"b', "a<b", "a>b", "a|b", "trailing."]:
+            with self.assertRaises(StagingError, msg=bad):
+                skill_proposal_rows([_proposal(bad)])
+
+    def test_absolute_paths_needing_normalisation_are_accepted(self):
+        # Requiring the input to already equal normpath() rejected safe paths:
+        # duplicate separators everywhere, and every forward-slash absolute
+        # path on Windows. Normalising first keeps the traversal guard.
+        rows = skill_proposal_rows([_proposal("alpha", live="/tmp/live//alpha/SKILL.md")])
+        self.assertEqual(rows[0]["live_skill_path"], os.path.normpath("/tmp/live/alpha/SKILL.md"))
+
     def test_two_skills_targeting_one_file_are_refused(self):
         shared = "/tmp/live/shared/SKILL.md"
         with self.assertRaises(StagingError):
