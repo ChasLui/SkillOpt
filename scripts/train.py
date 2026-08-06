@@ -499,6 +499,11 @@ def load_config(args: argparse.Namespace) -> dict:
             if key == "model.backend":
                 explicit_backend = str(option).split("=", 1)[1].strip()
                 break
+    if explicit_backend is None:
+        # ``model.backend`` from a structured YAML file is flattened to
+        # ``model_backend``.  Treat it like the equivalent CLI selection so
+        # its role mapping (and backend-specific model defaults) is applied.
+        explicit_backend = flat.get("model_backend") or flat.get("backend")
 
     backend = normalize_backend_name(flat.get("model_backend") or flat.get("target_backend") or "azure_openai")
 
