@@ -4,10 +4,45 @@ from __future__ import annotations
 
 import pytest
 
+from scripts.eval_only import _set_role_if_default
 from skillopt.engine.trainer import _resolve_role_backends
 
 # What configs/_base_/default.yaml ships.
 _BASE_CONFIG = ("openai_chat", "openai_chat")
+
+
+@pytest.mark.parametrize("current", [None, "", "openai_chat"])
+def test_eval_only_backend_label_replaces_inherited_role_defaults(current) -> None:
+    cfg = {"target_backend": current}
+    _set_role_if_default(
+        cfg,
+        "target_backend",
+        "copilot_exec",
+        explicitly_overridden=False,
+    )
+    assert cfg["target_backend"] == "copilot_exec"
+
+
+def test_eval_only_backend_label_preserves_custom_yaml_role() -> None:
+    cfg = {"optimizer_backend": "minimax_chat"}
+    _set_role_if_default(
+        cfg,
+        "optimizer_backend",
+        "copilot_chat",
+        explicitly_overridden=False,
+    )
+    assert cfg["optimizer_backend"] == "minimax_chat"
+
+
+def test_eval_only_backend_label_preserves_explicit_cli_role_override() -> None:
+    cfg = {"optimizer_backend": "openai_chat"}
+    _set_role_if_default(
+        cfg,
+        "optimizer_backend",
+        "copilot_chat",
+        explicitly_overridden=True,
+    )
+    assert cfg["optimizer_backend"] == "openai_chat"
 
 
 @pytest.mark.parametrize(

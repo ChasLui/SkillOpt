@@ -31,18 +31,31 @@ from skillopt.model import (
     configure_copilot_chat,
     configure_copilot_exec,
     configure_cursor_exec,
-    configure_qwen_chat,
     configure_minimax_chat,
+    configure_qwen_chat,
+    set_optimizer_backend,
+    set_optimizer_deployment,
     set_reasoning_effort,
     set_target_backend,
     set_target_deployment,
-    set_optimizer_backend,
-    set_optimizer_deployment,
 )
 from skillopt.model.common import default_model_for_backend, normalize_backend_name
+from skillopt.utils import compute_score
 
 _OPENAI_DEFAULT_MODEL_SENTINELS = {"gpt-5.4", "gpt-5.5"}
-from skillopt.utils import compute_score
+_ROLE_BACKEND_DEFAULTS = (None, "", "openai_chat")
+
+
+def _set_role_if_default(
+    cfg: dict,
+    key: str,
+    value: str,
+    *,
+    explicitly_overridden: bool,
+) -> None:
+    """Apply a high-level backend mapping without clobbering a named role."""
+    if not explicitly_overridden and cfg.get(key) in _ROLE_BACKEND_DEFAULTS:
+        cfg[key] = value
 
 
 # ── Reuse registry from train.py ───────────────────────────────────────────
@@ -337,13 +350,12 @@ def main() -> None:
         cfg["model_backend"] = backend
 
         def _set_role(key: str, value: str) -> None:
-            """Assign a role backend unless the operator named one explicitly.
-
-            ``setdefault`` was a no-op here: configs/_base_/default.yaml always
-            sets both roles, so an explicit --backend was silently ignored.
-            """
-            if not _has_model_override(f"model.{key}", key):
-                cfg[key] = value
+            _set_role_if_default(
+                cfg,
+                key,
+                value,
+                explicitly_overridden=_has_model_override(f"model.{key}", key),
+            )
 
         if backend in {"claude", "claude_chat"}:
             _set_role("optimizer_backend", "claude_chat")
