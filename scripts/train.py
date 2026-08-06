@@ -29,6 +29,7 @@ if _PROJECT_ROOT not in sys.path:
 from skillopt.model.common import default_model_for_backend, normalize_backend_name
 
 _OPENAI_DEFAULT_MODEL_SENTINELS = {"gpt-5.4", "gpt-5.5"}
+_ROLE_BACKEND_DEFAULTS = (None, "", "openai_chat")
 
 
 # ── Environment registry ────────────────────────────────────────────────────
@@ -507,31 +508,44 @@ def load_config(args: argparse.Namespace) -> dict:
     if explicit_backend is not None:
         backend = normalize_backend_name(explicit_backend)
         flat["model_backend"] = backend
-        if backend in {"claude", "claude_chat"}:
-            flat.setdefault("optimizer_backend", "claude_chat")
-            flat.setdefault("target_backend", "claude_chat")
+
+        def _set_role(key: str, value: str) -> None:
+            if (
+                not _has_model_override(f"model.{key}", key)
+                and flat.get(key) in _ROLE_BACKEND_DEFAULTS
+            ):
+                flat[key] = value
+
+        if backend == "claude_chat":
+            _set_role("optimizer_backend", "claude_chat")
+            _set_role("target_backend", "claude_chat")
         elif backend in {"codex", "codex_exec"}:
-            if not _has_model_override("model.optimizer_backend", "optimizer_backend"):
-                flat["optimizer_backend"] = "codex_exec"
-            if not _has_model_override("model.target_backend", "target_backend"):
-                flat["target_backend"] = "codex_exec"
+            _set_role("optimizer_backend", "codex_exec")
+            _set_role("target_backend", "codex_exec")
         elif backend == "claude_code_exec":
-            flat.setdefault("optimizer_backend", "openai_chat")
-            flat.setdefault("target_backend", "claude_code_exec")
+            _set_role("optimizer_backend", "openai_chat")
+            _set_role("target_backend", "claude_code_exec")
         elif backend == "cursor_exec":
-            if not _has_model_override("model.optimizer_backend", "optimizer_backend"):
-                flat["optimizer_backend"] = "openai_chat"
-            if not _has_model_override("model.target_backend", "target_backend"):
-                flat["target_backend"] = "cursor_exec"
-        elif backend in {"qwen", "qwen_chat"}:
-            flat.setdefault("optimizer_backend", "openai_chat")
-            flat.setdefault("target_backend", "qwen_chat")
-        elif backend in {"minimax", "minimax_chat"}:
-            flat.setdefault("optimizer_backend", "openai_chat")
-            flat.setdefault("target_backend", "minimax_chat")
+            _set_role("optimizer_backend", "openai_chat")
+            _set_role("target_backend", "cursor_exec")
+        elif backend == "copilot_chat":
+            _set_role("optimizer_backend", "copilot_chat")
+            _set_role("target_backend", "copilot_chat")
+        elif backend == "copilot_exec":
+            _set_role("optimizer_backend", "openai_chat")
+            _set_role("target_backend", "copilot_exec")
+        elif backend == "qwen_chat":
+            _set_role("optimizer_backend", "openai_chat")
+            _set_role("target_backend", "qwen_chat")
+        elif backend == "minimax_chat":
+            _set_role("optimizer_backend", "openai_chat")
+            _set_role("target_backend", "minimax_chat")
+        elif backend == "openai_compatible":
+            _set_role("optimizer_backend", "openai_compatible")
+            _set_role("target_backend", "openai_compatible")
         else:
-            flat.setdefault("optimizer_backend", "openai_chat")
-            flat.setdefault("target_backend", "openai_chat")
+            _set_role("optimizer_backend", "openai_chat")
+            _set_role("target_backend", "openai_chat")
     else:
         flat.setdefault("optimizer_backend", "openai_chat")
         flat.setdefault("target_backend", "openai_chat")
@@ -566,6 +580,13 @@ def load_config(args: argparse.Namespace) -> dict:
             and not _has_model_override("model.target", "target_model")
         ):
             flat["target_model"] = default_model_for_backend("cursor_exec")
+    if flat.get("target_backend") == "copilot_exec":
+        if (
+            str(flat.get("target_model", "") or "").strip() in _OPENAI_DEFAULT_MODEL_SENTINELS
+            and not _has_model_override("model.target", "target_model")
+        ):
+            # Copilot CLI model IDs are independent of Azure deployment names.
+            flat["target_model"] = ""
     if flat.get("target_backend") == "qwen_chat":
         if (
             str(flat.get("target_model", "") or "").strip() in _OPENAI_DEFAULT_MODEL_SENTINELS

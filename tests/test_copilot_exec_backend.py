@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+import scripts.train as train_script
 import skillopt.model as model
 from skillopt.config import flatten_config
 from skillopt.model import backend_config, copilot_backend
@@ -222,6 +223,48 @@ def test_copilot_backends_keep_a_real_deployment_fallback() -> None:
 
     assert default_model_for_backend("copilot_exec") == "gpt-4o"
     assert default_model_for_backend("copilot_chat") == "gpt-4o"
+
+
+def test_train_copilot_exec_omits_inherited_openai_target_model(monkeypatch) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "skillopt-train",
+            "--config",
+            str(root / "configs" / "searchqa" / "default.yaml"),
+            "--backend",
+            "copilot_exec",
+        ],
+    )
+
+    cfg = train_script.load_config(train_script.parse_args())
+
+    assert cfg["target_backend"] == "copilot_exec"
+    assert cfg["target_model"] == ""
+
+
+def test_train_copilot_exec_preserves_explicit_target_model(monkeypatch) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "skillopt-train",
+            "--config",
+            str(root / "configs" / "searchqa" / "default.yaml"),
+            "--backend",
+            "copilot_exec",
+            "--target_model",
+            "copilot-model-id",
+        ],
+    )
+
+    cfg = train_script.load_config(train_script.parse_args())
+
+    assert cfg["target_backend"] == "copilot_exec"
+    assert cfg["target_model"] == "copilot-model-id"
 
 
 def test_no_response_error_includes_cli_output(monkeypatch, tmp_path) -> None:

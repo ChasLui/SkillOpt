@@ -357,7 +357,7 @@ def main() -> None:
                 explicitly_overridden=_has_model_override(f"model.{key}", key),
             )
 
-        if backend in {"claude", "claude_chat"}:
+        if backend == "claude_chat":
             _set_role("optimizer_backend", "claude_chat")
             _set_role("target_backend", "claude_chat")
         elif backend in {"codex", "codex_exec"}:
@@ -369,16 +369,19 @@ def main() -> None:
         elif backend == "cursor_exec":
             _set_role("optimizer_backend", "openai_chat")
             _set_role("target_backend", "cursor_exec")
-        elif backend in {"copilot", "copilot_chat"}:
+        elif backend == "copilot_chat":
             # Both roles use the locally installed, CLI-authenticated backend.
             _set_role("optimizer_backend", "copilot_chat")
             _set_role("target_backend", "copilot_chat")
         elif backend == "copilot_exec":
             _set_role("optimizer_backend", "openai_chat")
             _set_role("target_backend", "copilot_exec")
-        elif backend in {"minimax", "minimax_chat"}:
+        elif backend == "minimax_chat":
             _set_role("optimizer_backend", "openai_chat")
             _set_role("target_backend", "minimax_chat")
+        elif backend == "openai_compatible":
+            _set_role("optimizer_backend", "openai_compatible")
+            _set_role("target_backend", "openai_compatible")
         else:
             _set_role("optimizer_backend", "openai_chat")
             _set_role("target_backend", "openai_chat")
@@ -410,6 +413,13 @@ def main() -> None:
             and not _has_model_override("model.target", "target_model")
         ):
             cfg["target_model"] = default_model_for_backend("cursor_exec")
+    if cfg.get("target_backend") == "copilot_exec":
+        if (
+            str(cfg.get("target_model", "") or "").strip() in _OPENAI_DEFAULT_MODEL_SENTINELS
+            and not _has_model_override("model.target", "target_model")
+        ):
+            # Copilot CLI model IDs are independent of Azure deployment names.
+            cfg["target_model"] = ""
     if cfg.get("target_backend") == "minimax_chat":
         if (
             str(cfg.get("target_model", "") or "").strip() in _OPENAI_DEFAULT_MODEL_SENTINELS
