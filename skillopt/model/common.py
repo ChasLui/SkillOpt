@@ -24,11 +24,10 @@ _BACKEND_DEFAULT_MODELS = {
     "claude_chat": "claude-sonnet-4-6",
     "claude_code_exec": "claude-sonnet-4-6",
     "cursor_exec": "composer-2.5",
-    # copilot_chat / copilot_exec are deliberately absent: the CLI picks its own
-    # model (configured via copilot_chat_optimizer_model / _target_model), and
-    # this table also feeds the shared Azure deployment fallback. Mapping them
-    # to "" left `--backend copilot_exec` with an EMPTY optimizer deployment,
-    # even though that role is still a real openai_chat model.
+    # copilot_chat / copilot_exec deliberately use the Azure default fallback
+    # from default_model_for_backend(). That fallback configures shared role
+    # deployments (not the CLI model, which uses the copilot_chat model keys)
+    # and keeps the openai_chat optimizer for copilot_exec non-empty.
     "qwen_chat": "Qwen/Qwen3.5-4B",
     "minimax_chat": "MiniMax-M2.7",
     "openai_compatible": "gpt-4o-mini",

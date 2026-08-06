@@ -390,6 +390,33 @@ def test_messages_variant_flattens_roles(monkeypatch) -> None:
     assert "SYSTEM_TEXT" in prompt and "USER_TEXT" in prompt
 
 
+def test_messages_variant_rejects_non_text_multipart_content(monkeypatch) -> None:
+    model.set_backend("copilot")
+    invoked = False
+
+    def _unexpected_invoke(*args, **kwargs):
+        nonlocal invoked
+        invoked = True
+        return "unexpected"
+
+    monkeypatch.setattr(copilot_backend, "_invoke", _unexpected_invoke)
+
+    with pytest.raises(NotImplementedError, match="unsupported multipart type 'image_url'"):
+        model.chat_target_messages(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe this image"},
+                        {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
+                    ],
+                }
+            ],
+            retries=1,
+        )
+    assert invoked is False
+
+
 @pytest.mark.parametrize("role", ["optimizer", "target"])
 def test_messages_variant_returns_compat_message_when_requested(monkeypatch, role) -> None:
     from skillopt.model.common import CompatAssistantMessage

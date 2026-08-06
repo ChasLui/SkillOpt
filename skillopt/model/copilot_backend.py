@@ -54,8 +54,19 @@ def _messages_to_prompt(messages: list[dict[str, Any]]) -> str:
     for message in messages or []:
         content = message.get("content")
         if isinstance(content, list):  # OpenAI multi-part content
-            content = "\n".join(
-                str(part.get("text", "")) for part in content if isinstance(part, dict) and part.get("type") == "text"
+            text_parts: list[str] = []
+            for part in content:
+                if not isinstance(part, dict) or part.get("type") != "text":
+                    part_type = part.get("type") if isinstance(part, dict) else type(part).__name__
+                    raise NotImplementedError(
+                        "copilot_chat supports only text message parts; "
+                        f"received unsupported multipart type {part_type!r}"
+                    )
+                text_parts.append(str(part.get("text", "")))
+            content = "\n".join(text_parts)
+        elif content is not None and not isinstance(content, str):
+            raise TypeError(
+                "copilot_chat message content must be a string, a list of text parts, or None"
             )
         content = str(content or "").strip()
         if not content:
