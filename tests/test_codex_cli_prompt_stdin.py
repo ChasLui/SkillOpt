@@ -29,18 +29,16 @@ def _ok_proc_writing(cmd):
     return Proc()
 
 
-def _assert_prompt_over_stdin(cmd, kwargs, prompt: str) -> None:
+def _assert_prompt_over_stdin(test: unittest.TestCase, cmd, kwargs, prompt: str) -> None:
     """Shared contract for both CodexCliBackend sites (issue #197)."""
-    assert kwargs.get("input") == prompt, (
-        f"expected input= full multi-line prompt, got {kwargs.get('input')!r}"
-    )
+    test.assertEqual(kwargs.get("input"), prompt)
     # Positional prompt must be "-" (stdin), never the prompt body as argv.
-    assert prompt not in cmd, "prompt must not be passed as an argv element"
-    assert "--" not in cmd, "legacy '--', prompt argv form must be gone"
-    assert cmd[-1] == "-", "codex exec expects trailing '-' to read prompt from stdin"
-    assert kwargs.get("encoding") == "utf-8"
-    assert kwargs.get("errors") == "replace"
-    assert kwargs.get("text") is True
+    test.assertNotIn(prompt, cmd)
+    test.assertNotIn("--", cmd)
+    test.assertEqual(cmd[-1], "-")
+    test.assertEqual(kwargs.get("encoding"), "utf-8")
+    test.assertEqual(kwargs.get("errors"), "replace")
+    test.assertIs(kwargs.get("text"), True)
 
 
 class TestCodexPromptOverStdin(unittest.TestCase):
@@ -61,7 +59,7 @@ class TestCodexPromptOverStdin(unittest.TestCase):
         self.assertEqual(out, "ok")
         self.assertEqual(len(calls), 1)
         cmd, kwargs = calls[0]
-        _assert_prompt_over_stdin(cmd, kwargs, prompt)
+        _assert_prompt_over_stdin(self, cmd, kwargs, prompt)
 
     def test_attempt_with_tools_sends_multiline_prompt_via_stdin(self):
         from skillopt_sleep.backend import CodexCliBackend
@@ -103,7 +101,7 @@ class TestCodexPromptOverStdin(unittest.TestCase):
             self.assertIsInstance(prompt, str)
             self.assertIn("\n", prompt)  # multi-line by construction
             self.assertIn("answer the question", prompt)
-            _assert_prompt_over_stdin(cmd, kwargs, prompt)
+            _assert_prompt_over_stdin(self, cmd, kwargs, prompt)
         finally:
             import shutil
             for d in work_holder:
