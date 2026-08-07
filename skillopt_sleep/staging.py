@@ -14,7 +14,7 @@ import shutil
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional
 
 from skillopt_sleep.types import SleepReport
 
