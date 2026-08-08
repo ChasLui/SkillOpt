@@ -165,6 +165,18 @@ def _discard_unstaged_evidence(path: str) -> None:
             break
 
 
+def _markdown_table_text(value: object) -> str:
+    """Keep untrusted evidence text inside one readable Markdown table cell."""
+    text = " ".join(str(value).splitlines())
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("|", "&#124;")
+        .replace("`", "&#96;")
+    )
+
+
 def _render_report_md(report: SleepReport, cfg: SleepConfig) -> str:
     lines = [
         f"# SkillOpt-Sleep — night {report.night} report",
@@ -230,7 +242,7 @@ def _render_report_md(report: SleepReport, cfg: SleepConfig) -> str:
         lines.append("| Skill | Decision | Gate | Tasks | Held-out | Edits |")
         lines.append("|---|---|---|---|---|---|")
         for g in report.skill_groups:
-            name = g.skill_name or "_(no skill name)_"
+            name = _markdown_table_text(g.skill_name or "_(no skill name)_")
             if g.status == "consolidated":
                 decision = "accepted" if g.accepted else "rejected"
                 scores = f"{g.baseline_score:.3f} → {g.candidate_score:.3f}"
@@ -248,7 +260,7 @@ def _render_report_md(report: SleepReport, cfg: SleepConfig) -> str:
                 decision = g.status
                 scores = "—"
                 edits = "—"
-            reason = f" — {g.reason}" if g.reason else ""
+            reason = f" — {_markdown_table_text(g.reason)}" if g.reason else ""
             lines.append(
                 f"| `{name}` | **{decision}**{reason} | {g.gate_action or '—'} "
                 f"| {g.n_tasks} | {scores} | {edits} |")

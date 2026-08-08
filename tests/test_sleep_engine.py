@@ -15,7 +15,7 @@ from unittest import mock
 from skillopt_sleep.backend import MockBackend, exact_score, keyword_soft_score
 from skillopt_sleep.config import load_config
 from skillopt_sleep.consolidate import consolidate
-from skillopt_sleep.cycle import run_sleep_cycle
+from skillopt_sleep.cycle import _render_report_md, run_sleep_cycle
 from skillopt_sleep.experiments.personas import programmer_persona, researcher_persona
 from skillopt_sleep.harvest import _detect_feedback, _is_meta_prompt, digest_transcript
 from skillopt_sleep.memory import apply_edits, current_learned_lines, extract_learned, set_learned
@@ -27,7 +27,13 @@ from skillopt_sleep.mine import (
     mine,
 )
 from skillopt_sleep.staging import adopt
-from skillopt_sleep.types import EditRecord, SessionDigest, SleepReport, TaskRecord
+from skillopt_sleep.types import (
+    EditRecord,
+    SessionDigest,
+    SkillGroupReport,
+    SleepReport,
+    TaskRecord,
+)
 
 
 class TestScoring(unittest.TestCase):
@@ -2483,6 +2489,25 @@ class TestMultiSkillReportWiring(unittest.TestCase):
             self.assertIn("(unvalidated)", thin)
             accepted = [ln for ln in md.splitlines() if "`research-skill`" in ln][0]
             self.assertNotIn("(unvalidated)", accepted)
+
+    def test_report_md_keeps_untrusted_group_text_inside_one_table_row(self):
+        report = SleepReport(
+            night=1,
+            project="/repo/example",
+            skill_groups=[SkillGroupReport(
+                skill_name="skill|`one\nnext",
+                status="failed",
+                reason="backend `bad`\nline | broken",
+            )],
+        )
+        md = _render_report_md(
+            report,
+            {"backend": "mock", "replay_mode": "deterministic"},
+        )
+        row = [line for line in md.splitlines() if "skill&#124;" in line][0]
+        self.assertEqual(row.count("|"), 7)
+        self.assertIn("skill&#124;&#96;one next", row)
+        self.assertIn("backend &#96;bad&#96; line &#124; broken", row)
 
     def test_report_md_has_no_group_section_when_the_feature_is_off(self):
         with tempfile.TemporaryDirectory() as proj, tempfile.TemporaryDirectory() as home:

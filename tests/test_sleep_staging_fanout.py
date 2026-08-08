@@ -38,7 +38,8 @@ class TestSkillProposalRows(unittest.TestCase):
         self.assertEqual([r["skill_name"] for r in rows], ["alpha", "beta"])
         self.assertEqual([r["proposed_file"] for r in rows],
                          ["proposed_SKILL.alpha.md", "proposed_SKILL.beta.md"])
-        self.assertEqual(rows[0]["live_skill_path"], "/tmp/live/alpha/SKILL.md")
+        self.assertEqual(rows[0]["live_skill_path"],
+                         os.path.normpath("/tmp/live/alpha/SKILL.md"))
 
     def test_filenames_are_unique_per_skill(self):
         self.assertNotEqual(proposal_filename("alpha"), proposal_filename("beta"))
@@ -107,6 +108,13 @@ class TestSkillProposalRows(unittest.TestCase):
         # path on Windows. Normalising first keeps the traversal guard.
         rows = skill_proposal_rows([_proposal("alpha", live="/tmp/live//alpha/SKILL.md")])
         self.assertEqual(rows[0]["live_skill_path"], os.path.normpath("/tmp/live/alpha/SKILL.md"))
+
+    def test_current_directory_segments_are_normalised_not_refused(self):
+        rows = skill_proposal_rows([
+            _proposal("alpha", live="/tmp/live/./alpha/SKILL.md")
+        ])
+        self.assertEqual(rows[0]["live_skill_path"],
+                         os.path.normpath("/tmp/live/alpha/SKILL.md"))
 
     def test_two_skills_targeting_one_file_are_refused(self):
         shared = "/tmp/live/shared/SKILL.md"
