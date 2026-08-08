@@ -38,7 +38,8 @@ class TestSkillProposalRows(unittest.TestCase):
         self.assertEqual([r["skill_name"] for r in rows], ["alpha", "beta"])
         self.assertEqual([r["proposed_file"] for r in rows],
                          ["proposed_SKILL.alpha.md", "proposed_SKILL.beta.md"])
-        self.assertEqual(rows[0]["live_skill_path"], "/tmp/live/alpha/SKILL.md")
+        self.assertEqual(rows[0]["live_skill_path"],
+                         os.path.normpath("/tmp/live/alpha/SKILL.md"))
 
     def test_filenames_are_unique_per_skill(self):
         self.assertNotEqual(proposal_filename("alpha"), proposal_filename("beta"))
