@@ -151,6 +151,15 @@ class TestWriteSkillProposals(unittest.TestCase):
                 write_skill_proposals(tmp, [_proposal("alpha"), _proposal("../escape")])
             self.assertEqual(os.listdir(tmp), [])
 
+    def test_non_text_proposal_leaves_no_partial_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(StagingError, "must be text"):
+                write_skill_proposals(
+                    tmp,
+                    [_proposal("alpha", "# alpha\n"), _proposal("beta", None)],
+                )
+            self.assertEqual(os.listdir(tmp), [])
+
     def test_writes_leave_no_temporary_files_behind(self):
         with tempfile.TemporaryDirectory() as tmp:
             write_skill_proposals(tmp, [_proposal("alpha")])

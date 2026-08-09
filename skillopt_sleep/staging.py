@@ -346,6 +346,11 @@ def skill_proposal_rows(proposals: Iterable[SkillProposal]) -> List[Dict[str, An
         name = _safe_skill_name(proposal.skill_name)
         if not name:
             raise StagingError(f"unsafe skill name for staging: {proposal.skill_name!r}")
+        if not isinstance(proposal.proposed_skill, str):
+            raise StagingError(
+                f"proposed skill content for {name!r} must be text, "
+                f"got {type(proposal.proposed_skill).__name__}"
+            )
         live = _safe_live_path(proposal.live_skill_path)
         if not live:
             raise StagingError(
