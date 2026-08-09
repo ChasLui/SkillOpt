@@ -109,6 +109,13 @@ class TestSkillProposalRows(unittest.TestCase):
         rows = skill_proposal_rows([_proposal("alpha", live="/tmp/live//alpha/SKILL.md")])
         self.assertEqual(rows[0]["live_skill_path"], os.path.normpath("/tmp/live/alpha/SKILL.md"))
 
+    def test_current_directory_segments_are_normalised_not_refused(self):
+        rows = skill_proposal_rows([
+            _proposal("alpha", live="/tmp/live/./alpha/SKILL.md")
+        ])
+        self.assertEqual(rows[0]["live_skill_path"],
+                         os.path.normpath("/tmp/live/alpha/SKILL.md"))
+
     def test_two_skills_targeting_one_file_are_refused(self):
         shared = "/tmp/live/shared/SKILL.md"
         with self.assertRaises(StagingError):

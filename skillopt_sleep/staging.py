@@ -286,7 +286,7 @@ def _safe_live_path(path: object) -> str:
     # would silently resolve "/live/../../etc/SKILL.md" into "/etc/SKILL.md"
     # and then accept it, because no ".." survives the collapse -- turning a
     # traversal guard into a traversal helper.
-    if any(part in {os.curdir, os.pardir} for part in raw.replace("\\", "/").split("/")):
+    if any(part == os.pardir for part in raw.replace("\\", "/").split("/")):
         return ""
     # Only then normalise, so a caller is not forced to hand over an already
     # canonical string. The old form demanded input == normpath(input), which

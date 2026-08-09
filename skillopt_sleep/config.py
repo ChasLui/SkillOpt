@@ -77,6 +77,7 @@ DEFAULTS: Dict[str, Any] = {
     # ── observability ──────────────────────────────────────────────────────
     "evidence_log": True,         # write per-night evidence.jsonl (full evidentiary chain)
     "evidence_max_chars": 4000,   # per-field truncation cap for evidence events
+    "multi_skill_report": False,  # extra consolidation/report row per routed skill group
     # ── adoption / safety ──────────────────────────────────────────────────
     "auto_adopt": False,          # default: stage + require explicit `adopt`
     "managed_skill_name": "skillopt-sleep-learned",
