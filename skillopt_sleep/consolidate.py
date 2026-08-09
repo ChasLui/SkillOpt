@@ -244,6 +244,8 @@ def consolidate(
             edits = contrastive_reflect(
                 backend, sets, cand_skill, cand_memory,
                 edit_budget=edit_budget, target="skill",
+                gate_metric=gate_metric,
+                gate_mixed_weight=gate_mixed_weight,
             )
             # fall back to single-shot reflect if contrast yielded nothing
             if not edits:
