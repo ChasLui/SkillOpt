@@ -539,7 +539,8 @@ def run_sleep_cycle(
     if cfg.get("multi_skill_report", False):
         managed_name = cfg.get("managed_skill_name", "skillopt-sleep-learned")
         grouped = group_tasks_by_skill_hint(tasks, managed_name)
-        if len(grouped) > 1:
+        only_catch_all = len(grouped) == 1 and managed_name in grouped
+        if grouped and not only_catch_all:
             _progress(cfg, f"multi-skill report: groups={len(grouped)}")
             group_outcomes = consolidate_groups(
                 backend,
@@ -551,7 +552,15 @@ def run_sleep_cycle(
                 gate_mode=cfg.get("gate_mode", "on"),
                 night=night,
             )
-            report.skill_groups = skill_group_reports(group_outcomes)
+            group_rows = skill_group_reports(group_outcomes)
+            # Skill hints and isolated backend failures are both untrusted
+            # free text. Scrub them before either report.json or report.md is
+            # rendered so staging cannot turn a failed call into a credential
+            # leak.
+            for row in group_rows:
+                row.skill_name = str(redact_secrets(row.skill_name))
+                row.reason = str(redact_secrets(row.reason))
+            report.skill_groups = group_rows
 
     report.tokens_used = backend.tokens_used()
     report.ended_at = _now_iso(clock)

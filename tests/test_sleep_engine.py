@@ -2438,6 +2438,57 @@ class TestMultiSkillReportWiring(unittest.TestCase):
             self.assertNotEqual(rows[0].n_tasks, rows[1].n_tasks)
             self.assertNotEqual(rows[0].baseline_score, rows[1].baseline_score)
 
+    def test_a_single_named_skill_still_emits_its_report_row(self):
+        tasks = [
+            task for task in self._hinted_tasks()
+            if task.skill_hint == "research-skill"
+        ]
+        with tempfile.TemporaryDirectory() as proj, tempfile.TemporaryDirectory() as home:
+            cfg = load_config(
+                invoked_project=proj, projects="invoked", backend="mock",
+                claude_home=os.path.join(home, ".claude"),
+                managed_skill_name="skillopt-sleep-learned", auto_adopt=False,
+                multi_skill_report=True,
+            )
+            outcome = run_sleep_cycle(cfg, seed_tasks=tasks)
+            self.assertEqual(
+                [row.skill_name for row in outcome.report.skill_groups],
+                ["research-skill"],
+            )
+            with open(os.path.join(outcome.staging_dir, "report.md"),
+                      encoding="utf-8") as handle:
+                md = handle.read()
+            self.assertIn("## Per-skill groups", md)
+            self.assertIn("`research-skill`", md)
+
+    def test_group_report_free_text_is_redacted_before_staging(self):
+        secret = "sk-LEAKED99887766abcdef"
+        injected_rows = [SkillGroupReport(
+            skill_name=f"research-{secret}",
+            status="failed",
+            reason=f"backend exposed {secret}",
+            n_tasks=1,
+        )]
+        with tempfile.TemporaryDirectory() as proj, tempfile.TemporaryDirectory() as home:
+            cfg = load_config(
+                invoked_project=proj, projects="invoked", backend="mock",
+                claude_home=os.path.join(home, ".claude"),
+                managed_skill_name="skillopt-sleep-learned", auto_adopt=False,
+                multi_skill_report=True,
+            )
+            with mock.patch(
+                "skillopt_sleep.cycle.skill_group_reports",
+                return_value=injected_rows,
+            ):
+                outcome = run_sleep_cycle(cfg, seed_tasks=self._hinted_tasks())
+
+            for filename in ("report.json", "report.md"):
+                with open(os.path.join(outcome.staging_dir, filename),
+                          encoding="utf-8") as handle:
+                    persisted = handle.read()
+                self.assertNotIn(secret, persisted)
+                self.assertIn("[REDACTED_OPENAI_KEY]", persisted)
+
     def test_a_mixed_night_reports_an_accepted_and_a_rejected_group(self):
         # The case the maintainer asked for: one night, one group accepted and
         # another rejected, each row carrying its own verdict. The rejected
