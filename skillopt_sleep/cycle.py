@@ -55,6 +55,7 @@ def _make_model_key(cfg: SleepConfig) -> str:
             codex_path=cfg.get("codex_path", ""),
             pi_path=cfg.get("pi_path", ""),
             cursor_path=cfg.get("cursor_path", ""),
+            opencode_path=cfg.get("opencode_path", ""),
             azure_endpoint=cfg.get("azure_endpoint", ""),
             project_dir=cfg.get("invoked_project", "") or os.getcwd(),
         )
@@ -308,6 +309,7 @@ def run_sleep_cycle(
         codex_path=cfg.get("codex_path", ""),
         pi_path=cfg.get("pi_path", ""),
         cursor_path=cfg.get("cursor_path", ""),
+        opencode_path=cfg.get("opencode_path", ""),
         azure_endpoint=cfg.get("azure_endpoint", ""),
         preferences=cfg.get("preferences", ""),
         project_dir=project,
