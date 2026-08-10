@@ -56,7 +56,7 @@ def _merge_batch(
             for e in merged.get(key, []):
                 e["merge_level"] = level
             return merged
-    except Exception:  # noqa: BLE001
+    except (ValueError, TypeError, KeyError, AttributeError, json.JSONDecodeError):
         pass
     # Fallback: concatenate all edits
     all_edits = []
@@ -248,7 +248,7 @@ def merge_patches(
                     f"{len(f_edits)}+{len(s_edits)} → {len(final[key])} {payload_label(update_mode)}"
                 )
             return final
-    except Exception:  # noqa: BLE001
+    except (ValueError, TypeError, KeyError, AttributeError, json.JSONDecodeError):
         pass
 
     return {
