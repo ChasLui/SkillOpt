@@ -955,10 +955,12 @@ def _run_codex_cli_exec(
         cmd.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
     actual_full_auto = bool(config.get("full_auto", True)) if full_auto is None else bool(full_auto)
     actual_sandbox = str(sandbox or config["sandbox"])
-    if actual_full_auto:
-        cmd.append("--full-auto")
-    else:
-        cmd.extend(["--sandbox", actual_sandbox])
+    cmd.extend(["--sandbox", actual_sandbox])
+    
+    approval_policy = str(config.get("approval_policy", "never"))
+    if not actual_full_auto and approval_policy == "never":
+        approval_policy = "ask"
+    cmd.extend(["--approval-policy", approval_policy])
     if model:
         cmd.extend(["-m", model])
     for data_dir in data_dirs or []:

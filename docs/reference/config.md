@@ -65,8 +65,11 @@ defaults to `claude` and can be overridden with `CLAUDE_CLI_BIN`.
 | `model.qwen_chat_*` | Shared `base_url`, `api_key`, `temperature`, `timeout_seconds`, `max_tokens`, and `enable_thinking` |
 | `model.optimizer_qwen_chat_*` / `model.target_qwen_chat_*` | Per-role Qwen overrides |
 | `model.minimax_*` | MiniMax `base_url`, `api_key`, shared `minimax_model`, `temperature`, `max_tokens`, and `enable_thinking`; `minimax_model` applies when MiniMax is the target |
-| `model.codex_exec_*` | Codex path, sandbox, profile, SDK mode, reasoning, network/search, and approval policy |
+| `model.codex_exec_*` | Codex path (`model.codex_cli_bin` and `model.codex_path` aliases accepted), sandbox (`model.sandbox` and `model.codex_sandbox` aliases accepted), profile, SDK mode, reasoning, network/search, and approval policy |
 | `model.claude_code_exec_*` | Claude path, profile, SDK mode, effort, and thinking-token cap |
+
+> [!WARNING]
+> When setting the Codex sandbox mode to `danger-full-access` (or using the `CODEX_SANDBOX_MODE="danger-full-access"` environment alias), the model is granted complete and unrestricted write access to the host filesystem. Use this mode with extreme caution, preferably only within an isolated container environment.
 | `model.cursor_exec_path` | Cursor Agent executable path; default `cursor-agent` |
 | `model.cursor_exec_sandbox` | Cursor sandbox mode: `enabled` (default) or `disabled`; file-edit rollouts require `enabled` |
 | `model.copilot_exec_path` | GitHub Copilot CLI executable path; default `copilot` |

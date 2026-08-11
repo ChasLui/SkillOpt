@@ -488,15 +488,15 @@ def main() -> None:
     set_optimizer_deployment(cfg.get("optimizer_model", default_model_for_backend(backend)))
     set_target_deployment(cfg.get("target_model", default_model_for_backend(backend)))
     configure_codex_exec(
-        path=cfg.get("codex_exec_path", "codex"),
-        sandbox=cfg.get("codex_exec_sandbox", "workspace-write"),
-        profile=cfg.get("codex_exec_profile", ""),
-        full_auto=cfg.get("codex_exec_full_auto", False),
-        reasoning_effort=cfg.get("codex_exec_reasoning_effort", "none"),
-        use_sdk=cfg.get("codex_exec_use_sdk", None),
-        network_access=cfg.get("codex_exec_network_access", False),
-        web_search=cfg.get("codex_exec_web_search", False),
-        approval_policy=cfg.get("codex_exec_approval_policy", "never"),
+        path=cfg.get("codex_exec_path") or cfg.get("codex_path") or cfg.get("codex_cli_bin") or cfg.get("codex_bin") or None,
+        sandbox=cfg.get("codex_exec_sandbox") or cfg.get("sandbox") or cfg.get("codex_sandbox") or None,
+        profile=cfg.get("codex_exec_profile") or None,
+        full_auto=cfg.get("codex_exec_full_auto"),
+        reasoning_effort=cfg.get("codex_exec_reasoning_effort") or None,
+        use_sdk=cfg.get("codex_exec_use_sdk"),
+        network_access=cfg.get("codex_exec_network_access"),
+        web_search=cfg.get("codex_exec_web_search"),
+        approval_policy=cfg.get("codex_exec_approval_policy") or None,
     )
     configure_claude_code_exec(
         path=cfg.get("claude_code_exec_path", "claude"),

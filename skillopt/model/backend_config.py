@@ -15,8 +15,8 @@ def _parse_bool(value: str | None, default: bool) -> bool:
 OPTIMIZER_BACKEND = normalize_backend_name(os.environ.get("OPTIMIZER_BACKEND", "openai_chat"))
 TARGET_BACKEND = normalize_backend_name(os.environ.get("TARGET_BACKEND", "openai_chat"))
 
-CODEX_EXEC_PATH = os.environ.get("CODEX_EXEC_PATH", "codex")
-CODEX_EXEC_SANDBOX = os.environ.get("CODEX_EXEC_SANDBOX", "workspace-write")
+CODEX_EXEC_PATH = os.environ.get("CODEX_EXEC_PATH") or os.environ.get("CODEX_CLI_BIN") or os.environ.get("CODEX_PATH") or "codex"
+CODEX_EXEC_SANDBOX = os.environ.get("CODEX_EXEC_SANDBOX") or os.environ.get("CODEX_SANDBOX_MODE") or os.environ.get("CODEX_SANDBOX") or "workspace-write"
 CODEX_EXEC_PROFILE = os.environ.get("CODEX_EXEC_PROFILE", "")
 CODEX_EXEC_FULL_AUTO = _parse_bool(os.environ.get("CODEX_EXEC_FULL_AUTO"), True)
 CODEX_EXEC_REASONING_EFFORT = os.environ.get("CODEX_EXEC_REASONING_EFFORT", "none")
@@ -133,9 +133,11 @@ def configure_codex_exec(
     if path is not None:
         CODEX_EXEC_PATH = str(path).strip() or "codex"
         os.environ["CODEX_EXEC_PATH"] = CODEX_EXEC_PATH
+        os.environ["CODEX_CLI_BIN"] = CODEX_EXEC_PATH
     if sandbox is not None:
         CODEX_EXEC_SANDBOX = str(sandbox).strip() or "workspace-write"
         os.environ["CODEX_EXEC_SANDBOX"] = CODEX_EXEC_SANDBOX
+        os.environ["CODEX_SANDBOX_MODE"] = CODEX_EXEC_SANDBOX
     if profile is not None:
         CODEX_EXEC_PROFILE = str(profile).strip()
         os.environ["CODEX_EXEC_PROFILE"] = CODEX_EXEC_PROFILE
