@@ -295,12 +295,65 @@ def parse_args() -> argparse.Namespace:
 # argument, but deliberately kept out of the config: an option here has no
 # structured path, and without the explicit skip below the mapping loop in
 # ``load_config`` would file it under ``env.<name>``.
-_RETIRED_CLI_OPTIONS: dict[str, str] = {
+# Flat CLI name -> (the structured key it used to have, why it is gone).
+_RETIRED_CLI_OPTIONS: dict[str, tuple[str, str]] = {
     "max_analyst_rounds": (
+        "gradient.max_analyst_rounds",
         "the analyst call count follows from the rollout results, "
-        "gradient.minibatch_size and gradient.failure_only"
+        "gradient.minibatch_size and gradient.failure_only",
     ),
 }
+
+
+def _lookup_dotted(cfg: dict, dotted: str):
+    """Value at a dotted path in *cfg*, or ``None`` if any level is missing."""
+    node: object = cfg
+    for part in dotted.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return None
+        node = node[part]
+    return node
+
+
+def _retired_option_sources(
+    args: argparse.Namespace,
+    cfg: dict,
+    structured: bool,
+    flat_name: str,
+    dotted: str,
+) -> list[str]:
+    """Every input path that still supplies a retired option.
+
+    The CLI flag is not the only way in, and it is the least dangerous one. A
+    retired key left in a YAML file is dropped in silence: ``flatten_config`` no
+    longer maps it and the trainer no longer reads it, so the run proceeds as
+    though the file had never mentioned it. That silence is what the CLI warning
+    exists to prevent, so the config file and ``--cfg-options`` get the same
+    treatment.
+    """
+    sources: list[str] = []
+    if getattr(args, flat_name, None) is not None:
+        sources.append(f"--{flat_name}")
+
+    accepted = {dotted, flat_name}
+    overrides = [
+        key.strip()
+        for key, separator, _value in (
+            str(option).partition("=")
+            for option in getattr(args, "cfg_options", None) or []
+        )
+        if separator and key.strip() in accepted
+    ]
+    sources.extend(f"--cfg-options {key}" for key in overrides)
+
+    # Only when no override named it: ``skillopt.config.load_config`` merges
+    # ``--cfg-options`` into *cfg*, so an override found there would otherwise be
+    # reported twice, and the override is the one that would have won anyway.
+    if not overrides:
+        key = dotted if structured else flat_name
+        if _lookup_dotted(cfg, key) is not None:
+            sources.append("the config file")
+    return sources
 
 
 # ── Flat key → structured path mapping (for legacy CLI → structured config) ──
@@ -475,16 +528,24 @@ def load_config(args: argparse.Namespace) -> dict:
                 stacklevel=2,
             )
 
-    for _retired, _rationale in _RETIRED_CLI_OPTIONS.items():
-        if getattr(args, _retired, None) is not None:
-            warnings.warn(
-                f"--{_retired} is deprecated and has no effect: {_rationale}.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
     cfg = _load(args.config, overrides=args.cfg_options)
     structured = is_structured(cfg)
+
+    for _retired, (_dotted, _rationale) in _RETIRED_CLI_OPTIONS.items():
+        _sources = _retired_option_sources(args, cfg, structured, _retired, _dotted)
+        if _sources:
+            warnings.warn(
+                f"{_dotted} was retired and is ignored: {_rationale}. "
+                f"Still supplied via {', '.join(_sources)}; remove it.",
+                # FutureWarning rather than DeprecationWarning: ``skillopt-train``
+                # is a console script pointing at ``scripts.train:main``, so this
+                # is raised from an imported module and not from ``__main__``.
+                # Python's default filters are ``default::DeprecationWarning:
+                # __main__`` followed by ``ignore::DeprecationWarning``, which
+                # would drop it before any normal CLI user saw it.
+                FutureWarning,
+                stacklevel=2,
+            )
 
     # Apply legacy --key value overrides
     cli = {k: v for k, v in vars(args).items()

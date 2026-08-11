@@ -57,8 +57,9 @@ All notable changes to SkillOpt are documented here. This project adheres to
 - Configuration files are read explicitly as UTF-8 (thanks @nankingjing,
   #124).
 - `gradient.max_analyst_rounds` is retired: it was parsed and logged but never
-  reached reflection. `--max_analyst_rounds` is still accepted and now warns
-  (thanks @xs229, #213).
+  reached reflection. Every way of still supplying it (`--max_analyst_rounds`,
+  `--cfg-options`, or a structured or legacy flat config file) is accepted and
+  warns rather than being dropped in silence (thanks @xs229, #213).
 
 ### Fixed
 - Preserve fractional rollout hard scores instead of coercing them to binary
