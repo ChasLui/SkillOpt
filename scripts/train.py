@@ -235,7 +235,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lr_control_mode", type=str,
                    choices=["fixed", "autonomous", "none"])
     p.add_argument("--merge_batch_size", type=int)
-    p.add_argument("--max_analyst_rounds", type=int)
+    # Retired, still accepted so existing launch scripts keep running.
+    p.add_argument("--max_analyst_rounds", type=int, help=argparse.SUPPRESS)
     p.add_argument("--sel_env_num", type=int)
     p.add_argument("--test_env_num", type=int)
     p.add_argument("--eval_test", type=_BOOL)
@@ -286,6 +287,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--mode", type=str)
 
     return p.parse_args()
+
+
+# ── Retired CLI options ──────────────────────────────────────────────────────
+
+# Still parsed so that existing launch scripts do not fail on an unrecognised
+# argument, but deliberately kept out of the config: an option here has no
+# structured path, and without the explicit skip below the mapping loop in
+# ``load_config`` would file it under ``env.<name>``.
+_RETIRED_CLI_OPTIONS: dict[str, str] = {
+    "max_analyst_rounds": (
+        "the analyst call count follows from the rollout results, "
+        "gradient.minibatch_size and gradient.failure_only"
+    ),
+}
 
 
 # ── Flat key → structured path mapping (for legacy CLI → structured config) ──
@@ -376,7 +391,6 @@ _LEGACY_TO_STRUCTURED: dict[str, str] = {
     "minibatch_size": "gradient.minibatch_size",
     "merge_batch_size": "gradient.merge_batch_size",
     "analyst_workers": "gradient.analyst_workers",
-    "max_analyst_rounds": "gradient.max_analyst_rounds",
     "failure_only": "gradient.failure_only",
     "edit_budget": "optimizer.learning_rate",
     "min_edit_budget": "optimizer.min_learning_rate",
@@ -461,12 +475,22 @@ def load_config(args: argparse.Namespace) -> dict:
                 stacklevel=2,
             )
 
+    for _retired, _rationale in _RETIRED_CLI_OPTIONS.items():
+        if getattr(args, _retired, None) is not None:
+            warnings.warn(
+                f"--{_retired} is deprecated and has no effect: {_rationale}.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
     cfg = _load(args.config, overrides=args.cfg_options)
     structured = is_structured(cfg)
 
     # Apply legacy --key value overrides
     cli = {k: v for k, v in vars(args).items()
-           if v is not None and k not in ("config", "cfg_options")}
+           if v is not None
+           and k not in ("config", "cfg_options")
+           and k not in _RETIRED_CLI_OPTIONS}
     if cli:
         if structured:
             from skillopt.config import apply_overrides
