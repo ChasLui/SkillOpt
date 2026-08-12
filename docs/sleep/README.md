@@ -90,8 +90,8 @@ skillopt-sleep schedule     # install a nightly cron entry for this project
 > **Version note.** This page tracks `main`. PyPI 0.2.0 provides the base
 > commands above. Cursor source/backend/plugin support, VS Code Copilot
 > transcript harvesting, Pi source/backend support, Sleep handoff, non-Azure
-> OpenAI-compatible endpoints, and `--preferences` landed later and require a
-> source install from `main` until the next release.
+> OpenAI-compatible endpoints, the OpenCode Sleep backend, and `--preferences`
+> landed later and require a source install from `main` until the next release.
 
 The per-agent integrations below still come from the repo; the CLI above is the
 standalone, pip-only way to run a cycle. Claude Code, Codex, Cursor, Copilot, and
@@ -169,6 +169,40 @@ The managed scheduler records the backend but does not preserve `--source`,
 `transcript_source`, `pi_home`, `pi_path`, and `model` in
 `~/.skillopt-sleep/config.json`. Use an absolute `pi_path` and verify the
 scheduled account's Pi authentication.
+
+### OpenCode
+
+Install and configure OpenCode using its
+[official documentation](https://opencode.ai/docs/), then confirm the CLI is
+available with `opencode --version`.
+
+`--backend opencode` sends SkillOpt's model calls for mining, plain task replay,
+judging, and reflection through an installed OpenCode CLI, using the user's
+existing login, provider environment variables, and file-based global
+configuration. Select a binary and model only when the OpenCode defaults are
+not suitable:
+
+```bash
+skillopt-sleep run --project "$(pwd)" \
+  --source codex --backend opencode \
+  --opencode-path /absolute/path/to/opencode --model provider/model
+```
+
+For plain calls, SkillOpt disables project configuration, tool use, external
+plugins, and configured MCP servers. It stops before the model call if it cannot
+confirm that every resolved MCP server is disabled. The subprocess keeps
+OpenCode's normal data directory, so calls may appear in the user's OpenCode
+session history. SkillOpt sets `OPENCODE_CONFIG_CONTENT` for the child process
+to define the temporary agent and disable configured MCP servers. This replaces
+the user's existing value in that child process, so settings supplied only
+through that value are unavailable; use file-based global configuration or
+provider environment variables instead.
+
+OpenCode transcript harvesting and tool-aware replay are not implemented yet.
+For scheduling, put `opencode_path`, `model`, and the desired
+`transcript_source` in `~/.skillopt-sleep/config.json` as needed, and verify the
+scheduled account can run OpenCode. See the
+[CLI reference](../reference/cli.md#opencode-backend) for full details.
 
 ### Cursor
 
