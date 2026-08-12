@@ -974,6 +974,56 @@ class OpenCodeCliBackend(CliBackend):
             self._cache.pop(key, None)
         return out
 
+    def _read_mcp_disabled_statuses(
+        self,
+        env: Dict[str, str],
+        work: str,
+        stage: str,
+    ) -> Optional[Dict[str, bool]]:
+        """Return whether each configured MCP server is explicitly disabled."""
+        try:
+            proc = subprocess.run(
+                [self.opencode_path, "debug", "config", "--pure"],
+                capture_output=True,
+                creationflags=_NO_WINDOW,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.timeout,
+                cwd=work,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            self.last_call_error = f"OpenCode CLI {stage} timed out after {self.timeout}s"
+            return None
+        except Exception:
+            self.last_call_error = f"OpenCode CLI {stage} could not be completed"
+            return None
+
+        if proc.returncode != 0:
+            self.last_call_error = f"OpenCode CLI {stage} exited {proc.returncode}"
+            return None
+        try:
+            resolved = json.loads(proc.stdout or "")
+        except (json.JSONDecodeError, RecursionError, TypeError):
+            self.last_call_error = f"OpenCode CLI {stage} returned invalid configuration"
+            return None
+        if not isinstance(resolved, dict):
+            self.last_call_error = f"OpenCode CLI {stage} returned invalid configuration"
+            return None
+
+        mcp = resolved.get("mcp", {})
+        if not isinstance(mcp, dict):
+            self.last_call_error = f"OpenCode CLI {stage} returned invalid MCP configuration"
+            return None
+        disabled_by_name: Dict[str, bool] = {}
+        for name, entry in mcp.items():
+            if not isinstance(name, str) or not isinstance(entry, dict):
+                self.last_call_error = f"OpenCode CLI {stage} returned invalid MCP configuration"
+                return None
+            disabled_by_name[name] = entry.get("enabled") is False
+        return disabled_by_name
+
     def _call(self, prompt: str, *, max_tokens: int = 1024) -> str:
         import secrets
 
@@ -990,6 +1040,8 @@ class OpenCodeCliBackend(CliBackend):
             "json",
             "--agent",
             agent_name,
+            "--title",
+            "skillopt-sleep",
             "--dir",
             work,
         ]
@@ -1018,18 +1070,43 @@ class OpenCodeCliBackend(CliBackend):
         env["PWD"] = work
         env.pop("OLDPWD", None)
         # Define the per-call agent without changing the user's config files.
-        env["OPENCODE_CONFIG_CONTENT"] = json.dumps(
-            {
-                "agent": {
-                    agent_name: {
-                        "mode": "primary",
-                        "permission": {"*": "deny"},
-                    }
+        plain_config = {
+            "agent": {
+                agent_name: {
+                    "mode": "primary",
+                    "permission": {"*": "deny"},
                 }
-            },
+            }
+        }
+        env["OPENCODE_CONFIG_CONTENT"] = json.dumps(
+            plain_config,
             separators=(",", ":"),
         )
         try:
+            # Tool permissions alone do not disable configured MCP servers. Read
+            # the merged config, disable every server it contains, and verify the
+            # result before calling the model.
+            discovered_mcp_statuses = self._read_mcp_disabled_statuses(
+                env, work, "MCP discovery"
+            )
+            if discovered_mcp_statuses is None:
+                return ""
+            plain_config["mcp"] = {
+                name: {"enabled": False} for name in sorted(discovered_mcp_statuses)
+            }
+            env["OPENCODE_CONFIG_CONTENT"] = json.dumps(
+                plain_config,
+                separators=(",", ":"),
+            )
+            verified_mcp_statuses = self._read_mcp_disabled_statuses(
+                env, work, "MCP verification"
+            )
+            if verified_mcp_statuses is None:
+                return ""
+            if any(not disabled for disabled in verified_mcp_statuses.values()):
+                self.last_call_error = "OpenCode CLI could not disable every configured MCP server"
+                return ""
+
             try:
                 proc = subprocess.run(
                     cmd,
