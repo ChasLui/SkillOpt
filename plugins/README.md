@@ -48,8 +48,8 @@ an importable `skillopt_sleep` module. Install with `uv tool install skillopt` o
 > **Version note.** This integration reference tracks `main`. PyPI 0.2.0
 > supports the base Sleep CLI, while Cursor source/backend/plugin support,
 > Pi source/backend support, handoff, Sleep support for non-Azure
-> OpenAI-compatible endpoints, the OpenCode Sleep backend, and `--preferences`
-> require a source checkout from `main` until the next release.
+> OpenAI-compatible endpoints, OpenCode Sleep source/backend support, and
+> `--preferences` require a source checkout from `main` until the next release.
 
 ## One sleep cycle
 
@@ -93,12 +93,15 @@ optimization.
   retained for scope filtering and may appear in miner prompts sent to a real
   backend and its provider. Known secret-shaped strings in retained message text
   are redacted only as defense in depth.
+- The core `opencode` source reads local OpenCode SQLite history without the
+  CLI, authentication, or provider access. See
+  [the CLI reference](../docs/reference/cli.md#opencode-source-and-backend) for
+  its retained-data boundary.
 - The core `opencode` backend uses the installed OpenCode CLI for plain model
   calls. It keeps the user's login and file-based global configuration
   while disabling project configuration, tool use, external plugins, and
-  configured MCP servers for those calls. OpenCode transcript harvesting,
-  tool-aware replay, and a native OpenCode plugin or command are not included
-  yet.
+  configured MCP servers for those calls. Tool-aware replay and a native
+  OpenCode plugin or command are not included yet.
 - Outbound prompts are not currently guaranteed to be free of secrets. Do not
   use a third-party provider on sensitive transcripts without reviewing the data
   source and the provider's retention policy.
@@ -136,12 +139,13 @@ Common implemented flags include:
 |---|---|---|
 | `--backend mock\|claude\|codex\|cursor\|copilot\|pi\|opencode\|handoff\|azure_openai` | `mock` | select who performs model calls |
 | `--model NAME` | backend default | select a backend-specific model |
-| `--source claude\|codex\|copilot\|cursor\|pi\|auto` | `claude` | select the transcript source; `auto` retains Codex-then-Claude precedence and does not select Copilot, Cursor, or Pi |
+| `--source claude\|codex\|copilot\|cursor\|pi\|opencode\|auto` | `claude` | select the transcript source; `auto` retains Codex-then-Claude precedence and does not select Copilot, Cursor, Pi, or OpenCode |
 | `--cursor-home PATH` | `~/.cursor` | override the Cursor transcript home |
 | `--cursor-path PATH` | auto-detect `cursor-agent` | select the Cursor Agent CLI executable |
 | `--pi-home PATH` | `~/.pi` | select the parent directory containing `agent/sessions` |
 | `--pi-path PATH` | auto-detect `pi` | select the Pi coding-agent CLI executable |
 | `--opencode-path PATH` | `SKILLOPT_SLEEP_OPENCODE_PATH`, then `opencode` on `PATH`/`PATHEXT` | select the OpenCode CLI executable |
+| `--opencode-db PATH` | `OPENCODE_DB`, then `${XDG_DATA_HOME:-~/.local/share}/opencode/opencode.db` | select the OpenCode SQLite history database |
 | `--project PATH` | current directory | select the project and invoked harvest scope |
 | `--scope invoked\|all` | `invoked` | limit transcript harvesting |
 | `--target-skill-path PATH` | managed skill | select a specific `SKILL.md` to stage/adopt |

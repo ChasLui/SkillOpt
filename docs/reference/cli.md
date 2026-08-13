@@ -4,9 +4,9 @@
 > include the generic research `openai_compatible` backend, Sleep handoff,
 > Sleep support for non-Azure OpenAI-compatible endpoints, the Sleep
 > `--preferences` flag, the research `cursor_exec` target harness, or Cursor
-> source/backend/plugin support, Pi source/backend support, the OpenCode Sleep
-> backend, or VS Code Copilot transcript harvesting; use a source install from
-> `main` for those features until the next release.
+> source/backend/plugin support, Pi source/backend support, OpenCode Sleep
+> source/backend support, or VS Code Copilot transcript harvesting; use a source
+> install from `main` for those features until the next release.
 
 ## Training
 
@@ -129,7 +129,7 @@ Actions are `run`, `dry-run`, `status`, `adopt`, `harvest`, `schedule`, and
 |---|---|
 | `--project PATH` | Project used for transcript scope, targets, state, and staging (default: current directory) |
 | `--scope invoked\|all` | Harvest this project or all projects |
-| `--source claude\|codex\|copilot\|cursor\|pi\|auto` | Transcript source; `auto` keeps Codex-then-Claude precedence and does not select Copilot, Cursor, or Pi |
+| `--source claude\|codex\|copilot\|cursor\|pi\|opencode\|auto` | Transcript source; `auto` keeps Codex-then-Claude precedence and does not select Copilot, Cursor, Pi, or OpenCode |
 | `--backend mock\|claude\|codex\|copilot\|cursor\|pi\|opencode\|handoff\|azure_openai` | Replay/optimizer backend |
 | `--model NAME` | Backend-specific model override |
 | `--cursor-home PATH` | Override `~/.cursor` for Cursor transcript harvesting |
@@ -138,6 +138,7 @@ Actions are `run`, `dry-run`, `status`, `adopt`, `harvest`, `schedule`, and
 | `--cursor-path PATH` | Path to the installed Cursor Agent CLI |
 | `--pi-path PATH` | Path to the installed Pi coding-agent CLI |
 | `--opencode-path PATH` | Path to the installed OpenCode CLI |
+| `--opencode-db PATH` | Path to the OpenCode SQLite history database |
 | `--preferences TEXT` | House rules supplied to reflection |
 | `--lookback-hours N` | Initial transcript lookback; `0` scans all history |
 | `--max-sessions N` / `--max-tasks N` | Bound the harvested workload |
@@ -214,18 +215,46 @@ The managed `schedule` command preserves the backend but not `--source`,
 `~/.skillopt-sleep/config.json`; use an absolute `pi_path` and verify
 authentication for the scheduled account.
 
-### OpenCode backend
+### OpenCode source and backend
 
-Install and configure OpenCode using its
-[official documentation](https://opencode.ai/docs/), then confirm the CLI is
-available with `opencode --version`.
+`--source opencode` reads OpenCode's local SQLite history directly in read-only
+mode. The source does not launch OpenCode, require the OpenCode CLI, use its
+login, or contact a model provider. Source selection remains explicit:
+`--source auto` keeps Codex-then-Claude precedence and does not select OpenCode.
+
+The database path is selected from `--opencode-db` or the `opencode_db` config
+key, then `OPENCODE_DB`, then
+`${XDG_DATA_HOME:-~/.local/share}/opencode/opencode.db`. A relative
+`OPENCODE_DB` value is resolved below OpenCode's data directory;
+`OPENCODE_DB=:memory:` has no persistent history to harvest.
+
+The harvester keeps visible user and assistant text, short tool names, the
+recorded project directory, Git branch, and session timestamps. It excludes
+reasoning, tool arguments and results, file contents, patches, and
+provider/model/account metadata. Only root sessions are considered, and
+sessions produced by SkillOpt's own OpenCode backend are excluded. Known
+secret-shaped strings in retained text are redacted as defense in depth;
+inspect harvested tasks before sending them to a real backend. The database is
+opened read-only, although SQLite may still update its transient `-shm` file
+while coordinating an active WAL database.
+
+The transcript source and model backend are independent. For example, export
+OpenCode-derived tasks for review before using any configured backend:
+
+```bash
+skillopt-sleep harvest --project "$(pwd)" \
+  --source opencode --output reviewed-tasks.json --progress
+```
 
 `--backend opencode` runs SkillOpt's model calls for mining, plain task replay,
 judging, and reflection through an installed OpenCode CLI. It uses the user's
 existing OpenCode login, provider environment variables, and file-based global
 configuration; SkillOpt does not manage OpenCode accounts or provider
-credentials. Transcript sources remain independent, and there is not yet a
-`--source opencode` harvester.
+credentials.
+
+Install and configure OpenCode using its
+[official documentation](https://opencode.ai/docs/), then confirm the CLI is
+available with `opencode --version`.
 
 If OpenCode is on `PATH`, no path option is needed. Otherwise use
 `--opencode-path`, the `opencode_path` config key, or
@@ -234,7 +263,7 @@ If OpenCode is on `PATH`, no path option is needed. Otherwise use
 
 ```bash
 skillopt-sleep run --project "$(pwd)" \
-  --source codex --backend opencode \
+  --source opencode --backend opencode \
   --opencode-path /absolute/path/to/opencode \
   --model provider/model --max-sessions 5 --max-tasks 3 --progress
 ```
@@ -256,11 +285,11 @@ unavailable. Calls may appear in the user's normal OpenCode session history;
 these controls are invocation settings, not complete account or process
 isolation.
 
-The managed scheduler stores the backend but not `--opencode-path`, `--model`,
-or the transcript source. Before scheduling OpenCode, put `opencode_path`,
-`model`, and `transcript_source` in `~/.skillopt-sleep/config.json` as needed.
-Prefer an absolute executable path and verify OpenCode access for the account
-that runs the scheduled job.
+The managed scheduler stores the backend but not `--source`, `--opencode-db`,
+`--opencode-path`, or `--model`. Put `transcript_source`, `opencode_db`,
+`opencode_path`, and `model` in `~/.skillopt-sleep/config.json` as needed. Use
+absolute database and executable paths, and verify OpenCode access when the
+scheduled run uses the backend.
 
 ### Cursor source and backend
 
