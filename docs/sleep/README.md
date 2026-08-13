@@ -26,6 +26,15 @@ It synthesizes **SkillOpt** (validation-gated bounded text edits), **Claude Drea
 (offline consolidation; review-then-adopt), and the **agent-sleep** idea (short-term
 experience → long-term competence).
 
+The optional `gate_no_regression` config key strengthens the aggregate gate.
+It defaults to `false` for compatibility; when set to `true`, every validation
+task must preserve or improve its score under the configured `gate_metric`.
+The check applies to intermediate skill and memory candidates and to the fresh
+final replay. A missing task result or non-finite task score also blocks the
+candidate; an absent numeric score aborts evaluation. Task-level changes are
+included in `report.md`, `report.json`, `diagnostics.json`, the CLI's `--json`
+output, and the evidence log.
+
 > **Data boundary.** Harvesting is local and read-only. The `mock` backend makes no
 > provider calls. A real backend, however, sends truncated excerpts from harvested
 > sessions and derived tasks to the provider you select for mining, replay, judging,
