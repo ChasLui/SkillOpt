@@ -36,7 +36,7 @@ from skillopt_sleep.cycle import run_sleep_cycle
 from skillopt_sleep.harvest_sources import harvest_for_config
 from skillopt_sleep.mine import mine
 from skillopt_sleep.staging import adopt as adopt_staging
-from skillopt_sleep.staging import latest_staging
+from skillopt_sleep.staging import json_safe, latest_staging
 from skillopt_sleep.state import SleepState
 from skillopt_sleep.tasks_file import load_tasks_file, make_tasks_payload, write_tasks_file
 
@@ -50,7 +50,7 @@ def _read_text(path: str) -> str:
 
 
 def _report_payload(rep, outcome) -> Dict[str, Any]:
-    return {
+    return json_safe({
         "night": rep.night,
         "accepted": rep.accepted,
         "gate_action": rep.gate_action,
@@ -63,10 +63,12 @@ def _report_payload(rep, outcome) -> Dict[str, Any]:
         "n_rejected_edits": len(rep.rejected_edits),
         "edits": [e.__dict__ for e in rep.edits],
         "rejected_edits": [e.__dict__ for e in rep.rejected_edits],
+        "gate_no_regression": bool(getattr(rep, "gate_no_regression", False)),
+        "gate_trials": _redact_deep(getattr(rep, "gate_trials", [])),
         "notes": rep.notes,
         "staging_dir": outcome.staging_dir,
         "adopted": outcome.adopted,
-    }
+    })
 
 
 def _add_common(p: argparse.ArgumentParser) -> None:
