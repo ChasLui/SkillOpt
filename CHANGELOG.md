@@ -7,6 +7,9 @@ All notable changes to SkillOpt are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- Additive `section_contains` rule-judge operator for literal,
+  case-insensitive matching within numbered, bilingual, or annotated ATX
+  Markdown headings. The legacy `section_present` behavior is unchanged.
 - **OpenCode transcript source** (`--source opencode`) for SkillOpt-Sleep. It
   reads visible user/assistant text and tool names from OpenCode's local SQLite
   history without requiring its CLI, login, or a provider connection.
