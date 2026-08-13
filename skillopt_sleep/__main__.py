@@ -13,7 +13,7 @@ Common flags:
     --max-tasks N       cap mined tasks per run
     --target-skill-path PATH explicit live SKILL.md to stage/adopt
     --tasks-file PATH   reviewed TaskRecord JSON file to replay instead of harvesting
-    --backend mock|claude|codex|copilot|cursor|pi|handoff|azure_openai
+    --backend mock|claude|codex|copilot|cursor|pi|opencode|handoff|azure_openai
     --source claude|codex|copilot|copilot_cli|cursor|pi|auto
     --vscode-workspace-storage PATH
     --copilot-cli-session-store PATH
@@ -74,11 +74,12 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--scope", default="", choices=["", "all", "invoked"])
     p.add_argument("--backend", default="",
                    choices=["", "mock", "claude", "codex", "copilot", "cursor", "pi",
-                            "handoff", "azure_openai"])
+                            "opencode", "handoff", "azure_openai"])
     p.add_argument("--model", default="")
     p.add_argument("--codex-path", default="", help="path to the real @openai/codex binary")
     p.add_argument("--cursor-path", default="", help="path to the Cursor Agent CLI")
     p.add_argument("--pi-path", default="", help="path to the Pi coding-agent CLI")
+    p.add_argument("--opencode-path", default="", help="path to the OpenCode CLI")
     p.add_argument("--claude-home", default="", help="override ~/.claude (also isolates state)")
     p.add_argument("--codex-home", default="", help="override ~/.codex for archived session harvest")
     p.add_argument("--cursor-home", default="", help="override ~/.cursor for Cursor session harvest")
@@ -126,6 +127,8 @@ def _cfg_from_args(args, task_meta: Dict[str, Any] | None = None) -> Any:
         overrides["pi_path"] = os.path.abspath(os.path.expanduser(args.pi_path))
     if getattr(args, "cursor_path", ""):
         overrides["cursor_path"] = os.path.abspath(os.path.expanduser(args.cursor_path))
+    if getattr(args, "opencode_path", ""):
+        overrides["opencode_path"] = os.path.abspath(os.path.expanduser(args.opencode_path))
     if getattr(args, "claude_home", ""):
         overrides["claude_home"] = os.path.abspath(args.claude_home)
     if getattr(args, "codex_home", ""):

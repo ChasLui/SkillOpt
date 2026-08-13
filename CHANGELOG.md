@@ -7,6 +7,12 @@ All notable changes to SkillOpt are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **OpenCode CLI backend** (`--backend opencode`) for SkillOpt-Sleep model calls,
+  including plain task replay, using an installed OpenCode CLI with the user's
+  existing login and file-based global configuration. Calls parse OpenCode's
+  JSONL output and disable project configuration, tool use, external plugins,
+  and configured MCP servers. Transcript harvesting and tool-aware replay
+  remain follow-up work.
 - **GitHub Copilot CLI backend**, in two forms: `copilot_chat` (usable as both
   optimizer and target) and `copilot_exec` (target-only execution harness).
   Because the Copilot CLI carries its own sign-in, `--backend copilot` selects
@@ -86,6 +92,8 @@ All notable changes to SkillOpt are documented here. This project adheres to
   @Alphaxalchemy's #129).
 
 ### Tests
+- Add focused OpenCode backend coverage and opt-in real-CLI smoke tests for a
+  plain call and a seeded cycle-level run.
 - Strengthen SkillOpt-Sleep verifier-discipline assertions, including recorded
   scores and gate actions (thanks @Tanmay9223, #96).
 - Add focused coverage for the validation-gate decision core and edit-budget

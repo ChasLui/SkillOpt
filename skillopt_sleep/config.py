@@ -45,7 +45,7 @@ DEFAULTS: Dict[str, Any] = {
     "val_fraction": 0.34,         # real tasks reserved to gate updates
     "test_fraction": 0.0,         # real tasks reserved as the final held-out measure
     # ── optimizer ──────────────────────────────────────────────────────────
-    "backend": "mock",            # "mock" | "claude" | "codex" | "copilot" | "cursor" | "pi"
+    "backend": "mock",            # "mock" | "claude" | "codex" | "copilot" | "cursor" | "pi" | "opencode"
     "model": "",                  # backend-specific; "" => backend default
     # Dual-backend split (both empty => single backend above plays all roles).
     # target = the model whose skill is deployed (runs `attempt` rollouts);
@@ -59,6 +59,7 @@ DEFAULTS: Dict[str, Any] = {
     "codex_path": "",             # "" => auto-detect the real @openai/codex binary
     "pi_path": "",                # "" => use `pi` on PATH
     "cursor_path": "",            # "" => auto-detect the Cursor Agent CLI
+    "opencode_path": "",          # "" => SKILLOPT_SLEEP_OPENCODE_PATH, then `opencode` on PATH/PATHEXT
     "edit_budget": 4,             # textual learning rate (max edits/night)
     "preferences": "",            # free-text house rules injected into reflect as a prior
     "gate_metric": "mixed",       # hard | soft | mixed (mixed best for tiny holdouts)
