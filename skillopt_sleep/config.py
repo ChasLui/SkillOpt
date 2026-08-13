@@ -31,9 +31,9 @@ DEFAULTS: Dict[str, Any] = {
     "cursor_home": CURSOR_HOME,
     "vscode_workspace_storage": "",  # "" => auto-detect platform defaults
     "copilot_cli_session_store": "",  # "" => ~/.copilot/session-store.db
-    # Explicit sources also include copilot, copilot_cli, cursor, and pi.
-    # ``auto`` keeps
-    # the established Codex-then-Claude precedence for backward compatibility.
+    "opencode_db": "",  # "" => OPENCODE_DB or the OpenCode XDG data path
+    # Explicit sources also include copilot, copilot_cli, cursor, pi, and opencode.
+    # ``auto`` keeps the established Codex-then-Claude precedence.
     "transcript_source": "claude",
     "projects": "invoked",        # "invoked" | "all" | [list of abs paths]
     "invoked_project": "",        # filled at runtime (cwd) when projects == "invoked"
@@ -147,6 +147,15 @@ class SleepConfig:
         value = self.data.get("copilot_cli_session_store", "") or ""
         if not value:
             return ""
+        return os.path.abspath(os.path.expanduser(str(value)))
+
+    @property
+    def opencode_db_path(self) -> str:
+        value = self.data.get("opencode_db", "") or ""
+        if not value:
+            return ""
+        if str(value) == ":memory:":
+            return ":memory:"
         return os.path.abspath(os.path.expanduser(str(value)))
 
     @property
