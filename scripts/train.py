@@ -346,9 +346,8 @@ def _retired_option_sources(
     ]
     sources.extend(f"--cfg-options {key}" for key in overrides)
 
-    # Only when no override named it: ``skillopt.config.load_config`` merges
-    # ``--cfg-options`` into *cfg*, so an override found there would otherwise be
-    # reported twice, and the override is the one that would have won anyway.
+    # Only when no override named it: an override is already reported as the
+    # source and is filtered before loading so it cannot change config format.
     if not overrides:
         key = dotted if structured else flat_name
         if _lookup_dotted(cfg, key) is not None:
@@ -528,7 +527,21 @@ def load_config(args: argparse.Namespace) -> dict:
                 stacklevel=2,
             )
 
-    cfg = _load(args.config, overrides=args.cfg_options)
+    # Retired dotted overrides can otherwise create a structured section in a
+    # legacy flat config before format detection.  Filter them before loading;
+    # the original list is still used below to produce the migration warning.
+    _retired_override_keys = set(_RETIRED_CLI_OPTIONS)
+    _retired_override_keys.update(
+        dotted for dotted, _rationale in _RETIRED_CLI_OPTIONS.values()
+    )
+    _active_cfg_options = []
+    for _option in getattr(args, "cfg_options", None) or []:
+        _key, _separator, _value = str(_option).partition("=")
+        if _separator and _key.strip() in _retired_override_keys:
+            continue
+        _active_cfg_options.append(_option)
+
+    cfg = _load(args.config, overrides=_active_cfg_options)
     structured = is_structured(cfg)
 
     for _retired, (_dotted, _rationale) in _RETIRED_CLI_OPTIONS.items():
@@ -546,6 +559,15 @@ def load_config(args: argparse.Namespace) -> dict:
                 FutureWarning,
                 stacklevel=2,
             )
+
+        # A retired key in a legacy flat file would otherwise survive in the
+        # returned trainer config.  Structured files need the nested key
+        # removed before flattening as well.
+        cfg.pop(_retired, None)
+        _section, _key = _dotted.split(".", 1)
+        _section_cfg = cfg.get(_section)
+        if isinstance(_section_cfg, dict):
+            _section_cfg.pop(_key, None)
 
     # Apply legacy --key value overrides
     cli = {k: v for k, v in vars(args).items()

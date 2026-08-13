@@ -115,7 +115,37 @@ def test_a_legacy_flat_config_that_still_sets_it_warns(monkeypatch, tmp_path) ->
     monkeypatch.setattr(sys, "argv", _argv(config=config))
 
     with pytest.warns(FutureWarning, match="the config file"):
-        train_script.load_config(train_script.parse_args())
+        cfg = train_script.load_config(train_script.parse_args())
+
+    assert "max_analyst_rounds" not in cfg
+
+
+@pytest.mark.parametrize(
+    "override",
+    ["gradient.max_analyst_rounds=3", "max_analyst_rounds=3"],
+)
+def test_retired_override_preserves_legacy_flat_config(
+    monkeypatch, tmp_path, override
+) -> None:
+    """A retired override must not reclassify a legacy flat file as structured."""
+    config = _legacy_flat_config_setting_the_retired_key(tmp_path)
+    monkeypatch.setattr(sys, "argv", _argv(config=config))
+    with pytest.warns(FutureWarning, match="the config file"):
+        expected = train_script.load_config(train_script.parse_args())
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        _argv("--cfg-options", override, "batch_size=9", config=config),
+    )
+    with pytest.warns(FutureWarning, match="cfg-options"):
+        cfg = train_script.load_config(train_script.parse_args())
+
+    # ``load_config`` synthesizes a timestamped output directory on each call.
+    expected.pop("out_root", None)
+    cfg.pop("out_root", None)
+    expected["batch_size"] = 9
+    assert cfg == expected
 
 
 @pytest.mark.parametrize(

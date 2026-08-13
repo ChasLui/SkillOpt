@@ -65,7 +65,8 @@ All notable changes to SkillOpt are documented here. This project adheres to
 - `gradient.max_analyst_rounds` is retired: it was parsed and logged but never
   reached reflection. Every way of still supplying it (`--max_analyst_rounds`,
   `--cfg-options`, or a structured or legacy flat config file) is accepted and
-  warns rather than being dropped in silence (thanks @xs229, #213).
+  warns rather than being dropped in silence (reported by @xs229 in #213;
+  implemented by @wilyan09007 in #219).
 
 ### Fixed
 - Preserve fractional rollout hard scores instead of coercing them to binary
@@ -107,7 +108,7 @@ All notable changes to SkillOpt are documented here. This project adheres to
 Thank you to the contributors behind this unreleased work:
 @AKhozya, @Alphaxalchemy, @Phoenix0531-sudo, @SparshGarg999,
 @Tanmay9223, @chirag127, @codeL1985, @dimitarvdenev,
-@ichoosetoaccept, @jcforever1, @nankingjing, @xs229, and
+@ichoosetoaccept, @jcforever1, @nankingjing, @wilyan09007, @xs229, and
 @zixuanguo786-ctrl.
 
 ## [0.2.0] — 2026-07-02
