@@ -17,7 +17,7 @@ normal agent requests.
 One "night":
 
 ```
-harvest Claude Code / Codex / VS Code Copilot / Cursor / Pi transcripts → mine recurring tasks → replay via the configured backend (isolation varies by backend; mock/handoff make no network calls)
+harvest Claude Code / Codex / VS Code Copilot / Cursor / Pi / OpenCode transcripts → mine recurring tasks → replay via the configured backend (isolation varies by backend; mock/handoff make no network calls)
    → consolidate (reflect → bounded edit → GATE on real held-out tasks)
    → stage proposal → (you) adopt
 ```
@@ -90,8 +90,9 @@ skillopt-sleep schedule     # install a nightly cron entry for this project
 > **Version note.** This page tracks `main`. PyPI 0.2.0 provides the base
 > commands above. Cursor source/backend/plugin support, VS Code Copilot
 > transcript harvesting, Pi source/backend support, Sleep handoff, non-Azure
-> OpenAI-compatible endpoints, the OpenCode Sleep backend, and `--preferences`
-> landed later and require a source install from `main` until the next release.
+> OpenAI-compatible endpoints, OpenCode Sleep source/backend support, and
+> `--preferences` landed later and require a source install from `main` until
+> the next release.
 
 The per-agent integrations below still come from the repo; the CLI above is the
 standalone, pip-only way to run a cycle. Claude Code, Codex, Cursor, Copilot, and
@@ -172,7 +173,13 @@ scheduled account's Pi authentication.
 
 ### OpenCode
 
-Install and configure OpenCode using its
+Use `--source opencode` to read local OpenCode SQLite history without launching
+the CLI or requiring login or provider access. It is not selected by
+`--source auto`. See the
+[CLI reference](../reference/cli.md#opencode-source-and-backend) for database
+selection and the retained-data boundary.
+
+For model calls, install and configure OpenCode using its
 [official documentation](https://opencode.ai/docs/), then confirm the CLI is
 available with `opencode --version`.
 
@@ -184,7 +191,7 @@ not suitable:
 
 ```bash
 skillopt-sleep run --project "$(pwd)" \
-  --source codex --backend opencode \
+  --source opencode --backend opencode \
   --opencode-path /absolute/path/to/opencode --model provider/model
 ```
 
@@ -198,11 +205,11 @@ the user's existing value in that child process, so settings supplied only
 through that value are unavailable; use file-based global configuration or
 provider environment variables instead.
 
-OpenCode transcript harvesting and tool-aware replay are not implemented yet.
-For scheduling, put `opencode_path`, `model`, and the desired
-`transcript_source` in `~/.skillopt-sleep/config.json` as needed, and verify the
-scheduled account can run OpenCode. See the
-[CLI reference](../reference/cli.md#opencode-backend) for full details.
+Tool-aware replay and a native OpenCode plugin or command are not implemented
+yet. For scheduled runs, configure the source, database, executable, and model
+in `~/.skillopt-sleep/config.json` as needed; the
+[CLI reference](../reference/cli.md#opencode-source-and-backend) has the full
+scheduler details.
 
 ### Cursor
 

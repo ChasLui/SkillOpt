@@ -7,12 +7,14 @@ All notable changes to SkillOpt are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **OpenCode transcript source** (`--source opencode`) for SkillOpt-Sleep. It
+  reads visible user/assistant text and tool names from OpenCode's local SQLite
+  history without requiring its CLI, login, or a provider connection.
 - **OpenCode CLI backend** (`--backend opencode`) for SkillOpt-Sleep model calls,
   including plain task replay, using an installed OpenCode CLI with the user's
   existing login and file-based global configuration. Calls parse OpenCode's
   JSONL output and disable project configuration, tool use, external plugins,
-  and configured MCP servers. Transcript harvesting and tool-aware replay
-  remain follow-up work.
+  and configured MCP servers. Tool-aware replay remains follow-up work.
 - **GitHub Copilot CLI backend**, in two forms: `copilot_chat` (usable as both
   optimizer and target) and `copilot_exec` (target-only execution harness).
   Because the Copilot CLI carries its own sign-in, `--backend copilot` selects
