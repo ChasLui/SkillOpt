@@ -62,6 +62,10 @@ All notable changes to SkillOpt are documented here. This project adheres to
   unsupported temperature parameters (thanks @chirag127, #128).
 - Configuration files are read explicitly as UTF-8 (thanks @nankingjing,
   #124).
+- `gradient.max_analyst_rounds` is retired: it was parsed and logged but never
+  reached reflection. Every way of still supplying it (`--max_analyst_rounds`,
+  `--cfg-options`, or a structured or legacy flat config file) is accepted and
+  warns rather than being dropped in silence (thanks @xs229, #213).
 
 ### Fixed
 - Preserve fractional rollout hard scores instead of coercing them to binary
@@ -103,7 +107,7 @@ All notable changes to SkillOpt are documented here. This project adheres to
 Thank you to the contributors behind this unreleased work:
 @AKhozya, @Alphaxalchemy, @Phoenix0531-sudo, @SparshGarg999,
 @Tanmay9223, @chirag127, @codeL1985, @dimitarvdenev,
-@ichoosetoaccept, @jcforever1, @nankingjing, and
+@ichoosetoaccept, @jcforever1, @nankingjing, @xs229, and
 @zixuanguo786-ctrl.
 
 ## [0.2.0] — 2026-07-02
