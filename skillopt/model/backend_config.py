@@ -117,6 +117,19 @@ def is_target_chat_backend() -> bool:
     return TARGET_BACKEND in {"openai_chat", "claude_chat", "qwen_chat", "minimax_chat", "openai_compatible", "copilot_chat"}
 
 
+_ALLOWED_CODEX_SANDBOXES = frozenset({"read-only", "workspace-write", "danger-full-access"})
+
+
+def validate_exec_sandbox(sandbox: str) -> str:
+    s = str(sandbox).strip()
+    if s not in _ALLOWED_CODEX_SANDBOXES:
+        raise ValueError(
+            f"Invalid codex_exec sandbox: {sandbox!r}. "
+            f"Allowed values are: {sorted(_ALLOWED_CODEX_SANDBOXES)}"
+        )
+    return s
+
+
 def configure_codex_exec(
     *,
     path: str | None = None,
@@ -135,7 +148,9 @@ def configure_codex_exec(
         os.environ["CODEX_EXEC_PATH"] = CODEX_EXEC_PATH
         os.environ["CODEX_CLI_BIN"] = CODEX_EXEC_PATH
     if sandbox is not None:
-        CODEX_EXEC_SANDBOX = str(sandbox).strip() or "workspace-write"
+        val = str(sandbox).strip() or "workspace-write"
+        validate_exec_sandbox(val)
+        CODEX_EXEC_SANDBOX = val
         os.environ["CODEX_EXEC_SANDBOX"] = CODEX_EXEC_SANDBOX
         os.environ["CODEX_SANDBOX_MODE"] = CODEX_EXEC_SANDBOX
     if profile is not None:

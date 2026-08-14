@@ -17,6 +17,7 @@ from skillopt.model.backend_config import (
     get_copilot_exec_config,
     get_cursor_exec_config,
     get_target_backend,
+    validate_exec_sandbox,
 )
 from skillopt.model.copilot_backend import (
     build_copilot_subprocess_env,
@@ -953,14 +954,13 @@ def _run_codex_cli_exec(
     reasoning_effort = str(config.get("reasoning_effort", "")).strip()
     if reasoning_effort:
         cmd.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
-    actual_full_auto = bool(config.get("full_auto", True)) if full_auto is None else bool(full_auto)
     actual_sandbox = str(sandbox or config["sandbox"])
+    validate_exec_sandbox(actual_sandbox)
     cmd.extend(["--sandbox", actual_sandbox])
-    
-    approval_policy = str(config.get("approval_policy", "never"))
-    if not actual_full_auto and approval_policy == "never":
-        approval_policy = "ask"
-    cmd.extend(["--approval-policy", approval_policy])
+
+    approval_policy = str(config.get("approval_policy", "never")).strip()
+    if approval_policy:
+        cmd.extend(["-c", f'approval_policy="{approval_policy}"'])
     if model:
         cmd.extend(["-m", model])
     for data_dir in data_dirs or []:
