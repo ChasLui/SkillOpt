@@ -904,7 +904,7 @@ def _parse_opencode_jsonl_text(raw: str) -> Tuple[str, str]:
             continue
         try:
             event = json.loads(line)
-        except (json.JSONDecodeError, RecursionError):
+        except (ValueError, RecursionError):
             return "", "malformed_jsonl"
         if not isinstance(event, dict):
             return "", "invalid_event"
@@ -1005,7 +1005,7 @@ class OpenCodeCliBackend(CliBackend):
             return None
         try:
             resolved = json.loads(proc.stdout or "")
-        except (json.JSONDecodeError, RecursionError, TypeError):
+        except (ValueError, RecursionError, TypeError):
             self.last_call_error = f"OpenCode CLI {stage} returned invalid configuration"
             return None
         if not isinstance(resolved, dict):
@@ -1575,7 +1575,7 @@ class CopilotCliBackend(CliBackend):
                 continue
             try:
                 obj = json.loads(line)
-            except (json.JSONDecodeError, TypeError):
+            except (ValueError, RecursionError, TypeError):
                 continue
             if obj.get("type") == "assistant.message":
                 content = (obj.get("data") or {}).get("content")
