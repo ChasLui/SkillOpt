@@ -7,6 +7,7 @@ Failure-driven patches take priority over success-driven ones.
 from __future__ import annotations
 
 import json
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from skillopt.model import chat_optimizer
@@ -21,7 +22,6 @@ from skillopt.optimizer.update_modes import (
 )
 from skillopt.prompts import load_prompt
 from skillopt.utils import extract_json
-
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -56,8 +56,8 @@ def _merge_batch(
             for e in merged.get(key, []):
                 e["merge_level"] = level
             return merged
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        warnings.warn(f"Optimizer call or parsing failed during batch merge: {e}", stacklevel=2)
     # Fallback: concatenate all edits
     all_edits = []
     for p in patches:
@@ -248,8 +248,8 @@ def merge_patches(
                     f"{len(f_edits)}+{len(s_edits)} → {len(final[key])} {payload_label(update_mode)}"
                 )
             return final
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        warnings.warn(f"Optimizer call or parsing failed during final merge: {e}", stacklevel=2)
 
     return {
         "reasoning": "fallback: failure first, then success",
