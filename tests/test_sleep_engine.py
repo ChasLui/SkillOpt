@@ -1424,6 +1424,17 @@ class TestCopilotBackend(unittest.TestCase):
             "",
         )
 
+    def test_parse_jsonl_ignores_excessively_nested_json(self):
+        from skillopt_sleep.backend import CopilotCliBackend
+        nested = "[" * 2000 + "0" + "]" * 2000
+        raw = '{"type":"assistant.message","data":' + nested + "}"
+        self.assertEqual(CopilotCliBackend._parse_jsonl_response(raw), "")
+
+    def test_parse_jsonl_ignores_oversized_integer(self):
+        from skillopt_sleep.backend import CopilotCliBackend
+        raw = '{"type":"assistant.message","data":' + "9" * 5000 + "}"
+        self.assertEqual(CopilotCliBackend._parse_jsonl_response(raw), "")
+
     def test_isolated_home_by_default(self):
         from skillopt_sleep.backend import CopilotCliBackend
         be = CopilotCliBackend()

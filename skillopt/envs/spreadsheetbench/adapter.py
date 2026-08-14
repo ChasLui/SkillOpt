@@ -113,7 +113,7 @@ class SpreadsheetBenchAdapter(EnvAdapter):
                 for line in f:
                     try:
                         existing.append(json.loads(line))
-                    except (json.JSONDecodeError, TypeError):
+                    except (ValueError, RecursionError, TypeError):
                         pass
             if existing:
                 return existing

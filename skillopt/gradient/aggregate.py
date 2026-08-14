@@ -52,12 +52,21 @@ def _merge_batch(
         )
         merged = extract_json(response)
         key = payload_key(update_mode)
-        if merged and key in merged:
-            for e in merged.get(key, []):
+        items = merged.get(key) if isinstance(merged, dict) else None
+        if isinstance(items, list) and all(isinstance(e, dict) for e in items):
+            for e in items:
                 e["merge_level"] = level
             return merged
-    except Exception as e:  # noqa: BLE001
-        warnings.warn(f"Optimizer call or parsing failed during batch merge: {e}", stacklevel=2)
+    except Exception:  # noqa: BLE001 — optimizer/provider failures must fall back
+        warnings.warn(
+            "Optimizer call or parsing failed during batch merge; using fallback",
+            stacklevel=2,
+        )
+    else:
+        warnings.warn(
+            "Optimizer returned unusable output during batch merge; using fallback",
+            stacklevel=2,
+        )
     # Fallback: concatenate all edits
     all_edits = []
     for p in patches:
@@ -241,15 +250,24 @@ def merge_patches(
         )
         final = extract_json(response)
         key = payload_key(update_mode)
-        if final and key in final:
+        items = final.get(key) if isinstance(final, dict) else None
+        if isinstance(items, list) and all(isinstance(e, dict) for e in items):
             if verbose:
                 print(
                     f"    [aggregate final] "
-                    f"{len(f_edits)}+{len(s_edits)} → {len(final[key])} {payload_label(update_mode)}"
+                    f"{len(f_edits)}+{len(s_edits)} → {len(items)} {payload_label(update_mode)}"
                 )
             return final
-    except Exception as e:  # noqa: BLE001
-        warnings.warn(f"Optimizer call or parsing failed during final merge: {e}", stacklevel=2)
+    except Exception:  # noqa: BLE001 — optimizer/provider failures must fall back
+        warnings.warn(
+            "Optimizer call or parsing failed during final merge; using fallback",
+            stacklevel=2,
+        )
+    else:
+        warnings.warn(
+            "Optimizer returned unusable output during final merge; using fallback",
+            stacklevel=2,
+        )
 
     return {
         "reasoning": "fallback: failure first, then success",
