@@ -22,10 +22,17 @@ A single `base_url` + `api_key` pair lets you point SkillOpt at, for example:
 | DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
 | Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
 | Together AI | `https://api.together.xyz/v1` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| Novita AI | `https://api.novita.ai/openai/v1` | `zai-org/glm-5.2` |
 | Ollama (local) | `http://localhost:11434/v1` | `qwen2.5:7b` |
 | vLLM / SGLang / TGI | `http://localhost:8000/v1` | your served model |
 | LiteLLM proxy | `http://localhost:4000` | any proxied model |
 | OpenRouter / Fireworks / xAI / … | provider base URL | provider model id |
+| OrcaRouter | `https://api.orcarouter.ai/v1` | `openai/gpt-5.5` |
+
+[OrcaRouter](https://www.orcarouter.ai) exposes OpenAI, Anthropic, Google,
+DeepSeek and other models behind one OpenAI-compatible endpoint. Its model IDs
+are namespaced by upstream provider (e.g. `openai/gpt-5.5`,
+`anthropic/claude-sonnet-4.6`), so pass a namespaced ID as the model.
 
 ### Python API
 
