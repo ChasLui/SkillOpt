@@ -74,6 +74,10 @@ All notable changes to SkillOpt are documented here. This project adheres to
   implemented by @wilyan09007 in #219).
 
 ### Fixed
+- Apply Codex executable and sandbox aliases consistently across inherited
+  YAML, CLI overrides, training, and eval-only entry points. Codex CLI calls
+  now use explicit sandbox and approval settings instead of the retired
+  `--full-auto` flag (thanks @RohithPariki, #220).
 - Preserve fractional rollout hard scores instead of coercing them to binary
   values (thanks @zixuanguo786-ctrl, #104).
 - Reject duplicate and overlapping IDs while materializing SearchQA manifests
