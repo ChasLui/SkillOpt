@@ -21,9 +21,9 @@ from skillopt.model.common import (
 )
 
 
-CODEX_BIN = os.environ.get("CODEX_CLI_BIN", "codex")
-CODEX_PROFILE = os.environ.get("CODEX_PROFILE", "review")
-CODEX_SANDBOX_MODE = os.environ.get("CODEX_SANDBOX_MODE", "read-only")
+CODEX_BIN = os.environ.get("CODEX_EXEC_PATH") or os.environ.get("CODEX_CLI_BIN") or "codex"
+CODEX_PROFILE = os.environ.get("CODEX_EXEC_PROFILE") or os.environ.get("CODEX_PROFILE") or "review"
+CODEX_SANDBOX_MODE = os.environ.get("CODEX_EXEC_SANDBOX") or os.environ.get("CODEX_SANDBOX_MODE") or "read-only"
 
 OPTIMIZER_DEPLOYMENT = os.environ.get("OPTIMIZER_DEPLOYMENT", "gpt-4o")
 TARGET_DEPLOYMENT = os.environ.get("TARGET_DEPLOYMENT", "gpt-4o")
