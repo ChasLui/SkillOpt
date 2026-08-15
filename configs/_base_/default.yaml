@@ -10,15 +10,14 @@ model:
   reasoning_effort: medium
   rewrite_reasoning_effort: ""
   rewrite_max_completion_tokens: 64000
-  codex_exec_path: codex
-  codex_exec_sandbox: workspace-write
+  codex_exec_path: ""       # blank preserves CODEX_EXEC_PATH or the built-in default
+  codex_exec_sandbox: ""    # blank preserves CODEX_EXEC_SANDBOX or workspace-write
   codex_exec_profile: ""
-  codex_exec_full_auto: false
-  codex_exec_reasoning_effort: none
-  codex_exec_use_sdk: auto
-  codex_exec_network_access: false
-  codex_exec_web_search: false
-  codex_exec_approval_policy: never
+  codex_exec_reasoning_effort: ""
+  codex_exec_use_sdk: null
+  codex_exec_network_access: null
+  codex_exec_web_search: null
+  codex_exec_approval_policy: ""
   claude_code_exec_path: claude
   claude_code_exec_profile: ""
   claude_code_exec_use_sdk: auto

@@ -9,9 +9,11 @@ import shutil
 import subprocess
 import threading
 import traceback
+import warnings
 from typing import Any
 
 from skillopt.model.backend_config import (
+    build_codex_exec_cli_config_overrides,
     get_claude_code_exec_config,
     get_codex_exec_config,
     get_copilot_exec_config,
@@ -936,7 +938,6 @@ def _run_codex_cli_exec(
     images: list[str] | None = None,
     data_dirs: list[str] | None = None,
     sandbox: str | None = None,
-    full_auto: bool | None = None,
 ) -> tuple[str, str]:
     config = get_codex_exec_config()
     last_message_path = os.path.join(work_dir, "codex_last_message.txt")
@@ -961,6 +962,8 @@ def _run_codex_cli_exec(
     approval_policy = str(config.get("approval_policy", "never")).strip()
     if approval_policy:
         cmd.extend(["-c", f'approval_policy="{approval_policy}"'])
+    for override in build_codex_exec_cli_config_overrides(config):
+        cmd.extend(["-c", override])
     if model:
         cmd.extend(["-m", model])
     for data_dir in data_dirs or []:
@@ -1020,6 +1023,13 @@ def run_codex_exec(
     sandbox: str | None = None,
     full_auto: bool | None = None,
 ) -> tuple[str, str]:
+    if full_auto is not None:
+        warnings.warn(
+            "full_auto is deprecated and ignored; configure sandbox and "
+            "approval_policy explicitly instead",
+            FutureWarning,
+            stacklevel=2,
+        )
     config = get_codex_exec_config()
     mode = _sdk_mode(config.get("use_sdk"))
     retries = int(config.get("empty_response_retries", 0) or 0)
@@ -1064,7 +1074,6 @@ def run_codex_exec(
                 images=images,
                 data_dirs=data_dirs,
                 sandbox=sandbox,
-                full_auto=full_auto,
             )
             all_raw.append(f"===== CODEX CLI ATTEMPT {attempt + 1} =====\n{raw}")
             last_response = response

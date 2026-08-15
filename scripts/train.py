@@ -201,7 +201,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--codex_exec_path", type=str)
     p.add_argument("--codex_exec_sandbox", type=str)
     p.add_argument("--codex_exec_profile", type=str)
-    p.add_argument("--codex_exec_full_auto", type=_BOOL)
+    p.add_argument(
+        "--codex_exec_full_auto",
+        type=_BOOL,
+        help=(
+            "Deprecated and ignored; use --codex_exec_sandbox and "
+            "--codex_exec_approval_policy"
+        ),
+    )
     p.add_argument("--codex_exec_reasoning_effort", type=str)
     p.add_argument("--codex_exec_use_sdk", type=str)
     p.add_argument("--codex_exec_network_access", type=_BOOL)

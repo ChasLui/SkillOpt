@@ -65,11 +65,8 @@ defaults to `claude` and can be overridden with `CLAUDE_CLI_BIN`.
 | `model.qwen_chat_*` | Shared `base_url`, `api_key`, `temperature`, `timeout_seconds`, `max_tokens`, and `enable_thinking` |
 | `model.optimizer_qwen_chat_*` / `model.target_qwen_chat_*` | Per-role Qwen overrides |
 | `model.minimax_*` | MiniMax `base_url`, `api_key`, shared `minimax_model`, `temperature`, `max_tokens`, and `enable_thinking`; `minimax_model` applies when MiniMax is the target |
-| `model.codex_exec_*` | Codex path (`model.codex_cli_bin` and `model.codex_path` aliases accepted), sandbox (`model.sandbox` and `model.codex_sandbox` aliases accepted), profile, SDK mode, reasoning, network/search, and approval policy |
+| `model.codex_exec_*` | Codex path, sandbox, profile, SDK mode, reasoning, network/search, and approval policy; see compatibility notes below |
 | `model.claude_code_exec_*` | Claude path, profile, SDK mode, effort, and thinking-token cap |
-
-> [!WARNING]
-> When setting the Codex sandbox mode to `danger-full-access` (or using the `CODEX_SANDBOX_MODE="danger-full-access"` environment alias), the model is granted complete and unrestricted write access to the host filesystem. Use this mode with extreme caution, preferably only within an isolated container environment.
 | `model.cursor_exec_path` | Cursor Agent executable path; default `cursor-agent` |
 | `model.cursor_exec_sandbox` | Cursor sandbox mode: `enabled` (default) or `disabled`; file-edit rollouts require `enabled` |
 | `model.copilot_exec_path` | GitHub Copilot CLI executable path; default `copilot` |
@@ -77,6 +74,37 @@ defaults to `claude` and can be overridden with `CLAUDE_CLI_BIN`.
 | `model.copilot_exec_allow_all_tools` | Optional opt-in to `--allow-all-tools`; unset by default so `COPILOT_EXEC_ALLOW_ALL_TOOLS` remains authoritative |
 | `model.copilot_chat_optimizer_model` / `model.copilot_chat_target_model` | Optional per-role `--model` IDs for `copilot_chat` |
 | `model.copilot_chat_timeout` | Per-call timeout in seconds for `copilot_chat` |
+
+For compatibility, `model.codex_bin`, `model.codex_cli_bin`, and
+`model.codex_path` are aliases for `model.codex_exec_path`;
+`model.codex_sandbox` and `model.sandbox` are aliases for
+`model.codex_exec_sandbox`. The canonical `codex_exec_*` name wins when both
+forms occur in the same YAML layer. A child config or command-line override
+still overrides its base config, whichever accepted spelling it uses.
+The aliases may also be supplied without the `model.` prefix through
+`--cfg-options`; with a structured config they are applied to the `model`
+section.
+
+`model.codex_exec_full_auto` and `--codex_exec_full_auto` remain accepted for
+backward compatibility but are deprecated and ignored. Set
+`model.codex_exec_sandbox` and `model.codex_exec_approval_policy` explicitly.
+
+Blank or `null` Codex values in the shipped base config leave the corresponding
+`CODEX_EXEC_*` environment variable in control. The effective precedence is an
+explicit command-line/YAML value, then the environment, then the built-in safe
+default (`codex`, `workspace-write`, and approval policy `never`).
+
+`model.codex_exec_network_access` controls outbound network access only while
+the Codex sandbox is `workspace-write`; it cannot restrict
+`danger-full-access`. `model.codex_exec_web_search` independently selects live
+web search when true and disables web search when false. These settings are
+forwarded consistently to both SDK and CLI execution paths.
+
+> [!WARNING]
+> `danger-full-access` grants the Codex process unrestricted filesystem access.
+> Use it only in an appropriately isolated environment, such as a disposable
+> container. The same warning applies to environment aliases such as
+> `CODEX_SANDBOX_MODE=danger-full-access`.
 
 ## Training (`train`)
 
