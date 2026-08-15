@@ -471,6 +471,8 @@ class CliBackend(Backend):
                     return f"the response must be at least {arg} characters long"
                 if op == "section_present":
                     return f"the response must contain a section/heading titled '{arg}'"
+                if op == "section_contains":
+                    return f"a markdown heading must contain the text '{arg}'"
                 if op == "regex":
                     return f"the response must match the pattern /{arg}/ (e.g. include that label)"
                 if op == "contains":
