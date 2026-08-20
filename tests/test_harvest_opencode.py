@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sqlite3
+import sys
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -913,10 +914,23 @@ def test_default_database_honors_xdg_and_opencode_db(monkeypatch, tmp_path: Path
     assert default_opencode_db() == ""
 
 
+def test_default_database_honors_windows_appdata(monkeypatch, tmp_path: Path) -> None:
+    local_app_data = tmp_path / "LocalAppData"
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.delenv("OPENCODE_DB", raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+    monkeypatch.delenv("APPDATA", raising=False)
+
+    assert default_opencode_db() == os.path.abspath(local_app_data / "opencode" / "opencode.db")
+
+
 def test_default_database_falls_back_to_home_local_share(monkeypatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.delenv("OPENCODE_DB", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
 

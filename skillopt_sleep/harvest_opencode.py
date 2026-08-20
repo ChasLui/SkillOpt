@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from typing import Any, Iterable, List, Optional
 from urllib.request import pathname2url
@@ -48,6 +49,9 @@ def default_opencode_db() -> str:
     data_home = os.environ.get("XDG_DATA_HOME", "")
     if data_home:
         data_dir = os.path.abspath(os.path.expanduser(data_home))
+    elif sys.platform == "win32" and (os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")):
+        win_appdata = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or ""
+        data_dir = os.path.abspath(os.path.expanduser(win_appdata))
     else:
         data_dir = os.path.join(os.path.expanduser("~"), ".local", "share")
     opencode_data = os.path.join(data_dir, "opencode")
