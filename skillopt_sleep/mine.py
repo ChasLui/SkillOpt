@@ -295,6 +295,17 @@ def assign_splits(
     if holdout_fraction is not None:
         val_fraction = holdout_fraction
 
+    for name, value in (("val_fraction", val_fraction), ("test_fraction", test_fraction)):
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(
+                f"{name} must be between 0 and 1 inclusive, got {value}"
+            )
+    if val_fraction + test_fraction >= 1.0:
+        raise ValueError(
+            f"val_fraction + test_fraction must be < 1 "
+            f"(got {val_fraction} + {test_fraction})"
+        )
+
     dream = [t for t in tasks if t.origin == "dream"]
     real = [t for t in tasks if t.origin != "dream"]
 
@@ -304,8 +315,21 @@ def assign_splits(
 
     val_cut = int(round(val_fraction * 100))
     test_cut = val_cut + int(round(test_fraction * 100))
+
+    def _stable_key(task: TaskRecord) -> tuple[int, str]:
+        bucket = int(hashlib.sha256((str(seed) + task.id).encode()).hexdigest(), 16)
+        return bucket, task.id
+
+    def _promote_one(*, to: str, from_splits: set[str]) -> None:
+        """Promote one real task using hash order; never demote hash-assigned test."""
+        candidates = [t for t in real if t.split in from_splits]
+        if not candidates:
+            return
+        candidates.sort(key=_stable_key)
+        candidates[0].split = to
+
     for t in real:
-        bucket = int(hashlib.sha256((str(seed) + t.id).encode()).hexdigest(), 16) % 100
+        bucket = _stable_key(t)[0] % 100
         if bucket < val_cut:
             t.split = "val"
         elif bucket < test_cut:
@@ -313,19 +337,13 @@ def assign_splits(
         else:
             t.split = "train"
 
-    # guarantee val (the gate) is non-empty when we have >=2 real tasks
-    real_splits = {t.split for t in real}
-    if len(real) >= 2 and "val" not in real_splits:
-        real[-1].split = "val"
-    # guarantee a train pool exists (dream or real) when possible
+    # Guarantee val (the gate) is non-empty when we have >=2 real tasks.
+    # Only promote from train so hash-assigned test tasks stay untouched.
+    if len(real) >= 2 and not any(t.split == "val" for t in real):
+        _promote_one(to="val", from_splits={"train"})
+    # Guarantee a train pool exists when possible; never borrow from test.
     if not any(t.split == "train" for t in tasks) and len(real) >= 2:
-        real[0].split = "train"
-    # if test was requested but ended up empty with >=3 real tasks, carve one
-    if test_fraction > 0 and len(real) >= 3 and not any(t.split == "test" for t in real):
-        for t in real:
-            if t.split == "train":
-                t.split = "test"
-                break
+        _promote_one(to="train", from_splits={"val"})
     return tasks
 
 
@@ -339,13 +357,20 @@ def mine(
     *,
     max_tasks: int = 40,
     candidate_limit: int = 0,
-    holdout_fraction: float = 0.34,
+    val_fraction: float = 0.34,
+    test_fraction: float = 0.0,
+    holdout_fraction: float | None = None,  # legacy alias for val_fraction
     seed: int = 42,
     llm_miner: Optional[Callable[[List[SessionDigest]], List[TaskRecord]]] = None,
     target_skill_text: str = "",
     target_skill_path: str = "",
 ) -> List[TaskRecord]:
-    """Top-level miner. Uses ``llm_miner`` if provided, else heuristic."""
+    """Top-level miner. Uses ``llm_miner`` if provided, else heuristic.
+
+    Split knobs mirror ``assign_splits``: ``val_fraction``/``test_fraction``
+    are the real controls; ``holdout_fraction`` remains the legacy alias and,
+    when passed, overrides ``val_fraction`` (same contract as assign_splits).
+    """
     candidate_limit = candidate_limit or max_tasks
     tasks: List[TaskRecord] = []
     if llm_miner is not None:
@@ -361,5 +386,11 @@ def mine(
     if target_skill_text or target_skill_path:
         tasks = filter_tasks_for_target(tasks, target_skill_text, target_skill_path)
     tasks = tasks[:max_tasks]
-    tasks = assign_splits(tasks, holdout_fraction=holdout_fraction, seed=seed)
+    tasks = assign_splits(
+        tasks,
+        val_fraction=val_fraction,
+        test_fraction=test_fraction,
+        holdout_fraction=holdout_fraction,
+        seed=seed,
+    )
     return tasks
